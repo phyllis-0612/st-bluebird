@@ -1,9 +1,16 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.1.2';
+export const VERSION = '0.1.3';
 
 const KEY = 'bluebird';
+const settingListeners = new Set();
+
+/** 直接通知插件内部订阅者，避免依赖酒馆全局 DOM 事件。 */
+export function onSettingChanged(listener) {
+    settingListeners.add(listener);
+    return () => settingListeners.delete(listener);
+}
 
 const DEFAULTS = Object.freeze({
     enabled: true,
@@ -41,9 +48,7 @@ export function getSettings() {
 export function setSetting(key, value) {
     getSettings()[key] = value;
     ctx().saveSettingsDebounced();
-    if (key === 'entryMode' || key === 'enabled') {
-        document.dispatchEvent(new Event('bluebird:entry-changed'));
-    }
+    for (const listener of settingListeners) listener(key, value);
 }
 
 // ---------- 配色 ----------

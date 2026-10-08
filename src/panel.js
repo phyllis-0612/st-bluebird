@@ -2,8 +2,9 @@
 // 手机端全屏面板。
 // 第一段只有外壳和三个页面：消息、通讯录、设置。
 
-import { icons } from './icons.js';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js';
+import { icons } from './icons.js?v=0.1.3';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.1.3';
+import { createEntryModeControl } from './entry-controls.js?v=0.1.3';
 
 let root = null;
 let page = 'list';
@@ -100,18 +101,9 @@ function renderSettings() {
     });
     themeField.append(seg);
 
-    const entryField = el('label', 'bb-entry-setting');
+    const entryField = el('div', 'bb-entry-setting');
     entryField.append(el('span', 'bb-switch-title', '入口显示方式'));
-    const entrySelect = document.createElement('select');
-    entrySelect.dataset.bbSetting = 'entryMode';
-    entrySelect.setAttribute('aria-label', '入口显示方式');
-    for (const [value, label] of [['floating', '悬浮球'], ['wand', '收进魔法棒']]) {
-        const option = el('option', null, label);
-        option.value = value;
-        entrySelect.append(option);
-    }
-    entrySelect.value = s.entryMode;
-    entryField.append(entrySelect, el('span', 'bb-switch-hint', '悬浮球可拖动，位置会记住；切换立即生效。'));
+    entryField.append(createEntryModeControl(), el('span', 'bb-switch-hint', '悬浮球可拖动，位置会记住；切换立即生效。'));
 
     // 正文消息提醒
     const notice = el('label', 'bb-switch');

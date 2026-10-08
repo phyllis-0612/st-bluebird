@@ -1,8 +1,9 @@
 // 青鸟 · 入口：悬浮球 / 魔法棒，互斥显示，不占用输入栏。
 
-import { icons } from './icons.js';
-import { getSettings, setSetting, applyThemeEverywhere } from './settings.js';
-import { togglePanel, openPanel, closePanel } from './panel.js';
+import { icons } from './icons.js?v=0.1.3';
+import { getSettings, setSetting, applyThemeEverywhere } from './settings.js?v=0.1.3';
+import { togglePanel, openPanel, closePanel } from './panel.js?v=0.1.3';
+import { createEntryModeControl, syncEntryModeControls } from './entry-controls.js?v=0.1.3';
 
 let entry = null;
 let cleanupEntry = null;
@@ -10,9 +11,8 @@ let unread = 0;
 
 function syncSettingsControls() {
     const s = getSettings();
-    const mode = document.getElementById('bb-entry-mode');
     const enabled = document.getElementById('bb-enabled');
-    if (mode) mode.value = s.entryMode;
+    syncEntryModeControls();
     if (enabled) enabled.checked = s.enabled;
 }
 
@@ -176,6 +176,7 @@ export function mountSettingsBlock() {
     if (!host) return;
     const box = document.createElement('div');
     box.id = 'bluebird-settings';
+    box.dataset.bbThemed = '';
     box.innerHTML = `
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
@@ -186,21 +187,17 @@ export function mountSettingsBlock() {
                 <label class="checkbox_label" for="bb-enabled">
                     <input type="checkbox" id="bb-enabled"><span>启用青鸟</span>
                 </label>
-                <label for="bb-entry-mode">入口显示方式</label>
-                <select id="bb-entry-mode" class="text_pole">
-                    <option value="floating">悬浮球</option>
-                    <option value="wand">收进魔法棒</option>
-                </select>
+                <div>入口显示方式</div>
+                <div class="bb-entry-controls-slot"></div>
                 <div id="bb-open" class="menu_button" role="button" tabindex="0">打开青鸟</div>
                 <small>悬浮球可拖动，位置会记住；入口切换立即生效。</small>
             </div>
         </div>`;
     host.appendChild(box);
+    box.querySelector('.bb-entry-controls-slot').appendChild(createEntryModeControl());
     syncSettingsControls();
     const enabled = box.querySelector('#bb-enabled');
     enabled.addEventListener('change', () => setSetting('enabled', enabled.checked));
-    const mode = box.querySelector('#bb-entry-mode');
-    mode.addEventListener('change', () => setSetting('entryMode', mode.value));
     box.querySelector('#bb-open').addEventListener('click', () => {
         if (!getSettings().enabled) {
             toastr.info('先勾上「启用青鸟」');

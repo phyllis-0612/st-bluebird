@@ -6,7 +6,8 @@
 /* ---------- 配色 ---------- */
 
 #bluebird-panel,
-#bluebird-entry {
+#bluebird-entry,
+#bluebird-settings {
     --bb-bg: #EAF0EF;
     --bb-surface: #FFFFFF;
     --bb-card: #F3F7F6;
@@ -26,7 +27,8 @@
 }
 
 #bluebird-panel[data-bb-theme="night"],
-#bluebird-entry[data-bb-theme="night"] {
+#bluebird-entry[data-bb-theme="night"],
+#bluebird-settings[data-bb-theme="night"] {
     --bb-bg: #132225;
     --bb-surface: #1C3135;
     --bb-card: #18292C;
@@ -477,15 +479,39 @@ html.bb-open body {
     background: var(--bb-surface);
 }
 
-#bluebird-panel .bb-entry-setting select {
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 12px;
+#bluebird-panel .bb-entry-options,
+#bluebird-settings .bb-entry-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    margin: 6px 0;
     border: 1px solid var(--bb-line);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--bb-card);
-    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-entry-choice,
+#bluebird-settings .bb-entry-choice {
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 6px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--bb-sub);
     font: inherit;
+    text-align: center;
+    box-shadow: none;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+#bluebird-panel .bb-entry-choice.is-active,
+#bluebird-settings .bb-entry-choice.is-active {
+    background: var(--bb-accent-soft);
+    color: var(--bb-accent-strong);
+    font-weight: 700;
 }
 
 /* ---------- 减少动效 ---------- */
