@@ -18,7 +18,7 @@ function memoryDB() {
     return { open() { const op = { result: db }; queueMicrotask(() => op.onsuccess?.()); return op; }, map };
 }
 function harness() {
-    const settings = { apiPresets: [], activeApiPresetId: 'tavern', phoneModel: '', voiceCacheMB: 10,
+    const settings = { apiPresets: [], activeApiPresetId: 'tavern', phoneModel: '', voiceCacheMB: 10, voiceProvider: 'minimax',
         ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' },
         ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' } };
     const context = { extensionSettings: {}, generateRaw: async () => '酒馆回复' };
@@ -67,6 +67,7 @@ test('Playhouse key takes precedence and missing key leaves voice as text', asyn
 
 test('ElevenLabs uses account voice list and audio response, MiniMax emotion is optional', async () => {
     const h = harness(); h.contacts[0].voice = { provider: 'elevenlabs', voiceId: 'v1' };
+    h.settings.voiceProvider = 'elevenlabs';
     h.settings.ttsElevenLabs.apiKey = 'eleven-key';
     const voices = await h.scope.loadVoiceCatalog('elevenlabs', h.context);
     assert.equal(voices[0].voiceId, 'v1');
@@ -91,6 +92,21 @@ test('generated voice tone directs compatible TTS without changing the visible t
     const mini = { provider: 'minimax', voiceId: 'voice' };
     assert.equal(h.scope.synthesisRequest(utterance, mini, h.settings.ttsMiniMax).body.voice_setting.emotion, undefined);
     assert.equal(h.scope.synthesisRequest(utterance, mini, { ...h.settings.ttsMiniMax, model: 'speech-2.6-hd' }).body.voice_setting.emotion, 'whisper');
+});
+
+test('global provider uses each contact’s matching voice and reads both Playhouse voice banks', () => {
+    const h = harness(), message = { sender: '阿澜', type: 'voice', content: '你好' };
+    h.contacts[0].voice = { minimax: 'mini-a', elevenlabs: 'eleven-a' };
+    h.context.extensionSettings.playhouse = { voiceBank: [{ voiceId: 'mini-a', label: '小米' }],
+        elevenLabsVoices: { voiceBank: [{ voiceId: 'eleven-a', label: '小十一' }] },
+        tts: { apiKey: 'mini-key', elevenlabs: { apiKey: 'eleven-key' } } };
+    assert.equal(h.scope.knownVoices('minimax', h.context)[0].label, '小米');
+    assert.equal(h.scope.knownVoices('elevenlabs', h.context)[0].label, '小十一');
+    assert.equal(h.scope.voiceAvailability(message, h.context).config.voiceId, 'mini-a');
+    h.settings.voiceProvider = 'elevenlabs';
+    assert.equal(h.scope.voiceAvailability(message, h.context).config.voiceId, 'eleven-a');
+    h.contacts[0].voice = { minimax: 'mini-a' };
+    assert.equal(h.scope.voiceAvailability(message, h.context).ready, false);
 });
 
 test('playback unlocks during the click and stops the previous clip', async () => {

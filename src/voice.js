@@ -1,7 +1,7 @@
 // 第六段：按点击合成单条语音；凭据从梨园实时读取，不复制进青鸟。
-import { ctx, getSettings } from './settings.js?v=0.6.2';
-import { selectedContacts } from './contacts.js?v=0.6.2';
-import { apiUrl } from './api.js?v=0.6.2';
+import { ctx, getSettings } from './settings.js?v=0.6.3';
+import { selectedContacts } from './contacts.js?v=0.6.3';
+import { apiUrl } from './api.js?v=0.6.3';
 
 const catalogs = { minimax: [], elevenlabs: [] };
 let audioContext = null, currentSource = null, playSerial = 0, currentId = '';
@@ -58,7 +58,7 @@ export function voiceSource(provider, context = ctx(), settings = getSettings())
 export function knownVoices(provider, context = ctx()) {
     const playhouse = context.extensionSettings?.playhouse;
     const list = provider === 'minimax' ? playhouse?.voiceBank : playhouse?.elevenLabsVoices?.voiceBank;
-    const voices = [...(Array.isArray(list) ? list : []), ...catalogs[provider]];
+    const voices = Array.isArray(list) && list.length ? list : catalogs[provider] || [];
     return [...new Map(voices.filter(v => v?.voiceId).map(v => [v.voiceId, { voiceId: v.voiceId, label: v.label || v.voiceId }])).values()];
 }
 
@@ -89,11 +89,14 @@ export async function loadVoiceCatalog(provider, context = ctx()) {
 }
 
 function voiceConfig(message, context = ctx()) {
-    return selectedContacts(context).find(c => c.name === message.sender)?.voice;
+    const provider = getSettings().voiceProvider;
+    const voice = selectedContacts(context).find(c => c.name === message.sender)?.voice;
+    const voiceId = voice?.[provider] || (voice?.provider === provider ? voice.voiceId : '');
+    return { provider, voiceId };
 }
 export function voiceAvailability(message, context = ctx()) {
     const config = voiceConfig(message, context);
-    if (!config?.voiceId || !['minimax', 'elevenlabs'].includes(config.provider)) return { ready: false, reason: '未给这个联系人配音色' };
+    if (!config.voiceId || !['minimax', 'elevenlabs'].includes(config.provider)) return { ready: false, reason: '未给这个联系人配置当前语音服务的音色' };
     const source = voiceSource(config.provider, context);
     if (!source.apiKey) return { ready: false, reason: `${config.provider === 'minimax' ? 'MiniMax' : 'ElevenLabs'} 未配置 Key` };
     return { ready: true, config, source };

@@ -34,6 +34,17 @@ test('primary and auxiliary books are scanned in batches; nonpeople stay uncheck
     assert.equal(JSON.stringify(h.settings.contacts).includes('住在海港'), false);
 });
 
+test('legacy voice binding migrates and switching services preserves each contact’s separate voice', () => {
+    const h = harness();
+    h.settings.contacts = { 'card:role.png': [{ name: '陆', source: { type: 'card' }, level: 'normal', voice: { provider: 'elevenlabs', voiceId: 'e-1' } }] };
+    const first = h.scope.selectedContacts()[0];
+    assert.equal(first.voice.elevenlabs, 'e-1');
+    h.scope.saveContacts([{ ...first, voice: { ...first.voice, minimax: 'm-1' } }]);
+    assert.equal(h.settings.contacts['card:role.png'][0].voice.elevenlabs, 'e-1');
+    assert.equal(h.settings.contacts['card:role.png'][0].voice.minimax, 'm-1');
+    assert.equal(h.scope.selectedContacts()[0].voice.minimax, 'm-1');
+});
+
 test('NPC phone request rereads latest entry and excludes absent scenes and global memory', async () => {
     const h = harness(); const contact = { name: '阿澜', source: { type: 'world', book: '副书', uid: 7 }, level: 'clingy' };
     h.scope.saveContacts([contact]);

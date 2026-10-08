@@ -2,18 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.2';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.2';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.2';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.2';
-import { scrollToFloor } from './chat-integration.js?v=0.6.2';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.2';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.2';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.2';
-import { getStoryContacts } from './proactive.js?v=0.6.2';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.2';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.2';
-import { knownVoices, loadVoiceCatalog, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.2';
+import { icons } from './icons.js?v=0.6.3';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.3';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.3';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.3';
+import { scrollToFloor } from './chat-integration.js?v=0.6.3';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.3';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.3';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.3';
+import { getStoryContacts } from './proactive.js?v=0.6.3';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.3';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.3';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.3';
 
 let root = null;
 let page = 'list';
@@ -28,9 +28,10 @@ const drafts = new Map();
 let attachmentType = null;
 let sending = false;
 let candidates = null, extracting = false;
-let voiceCatalogLoading = '', presetModels = [], voiceLoadingId = '';
-function persistContactVoice(name, update) {
-    const contacts = selectedContacts().map(c => c.name === name ? { ...c, voice: { ...(c.voice || {}), ...update } } : c);
+let presetModels = [];
+function persistContactVoice(name, voiceId) {
+    const provider = getSettings().voiceProvider;
+    const contacts = selectedContacts().map(c => c.name === name ? { ...c, voice: { ...(c.voice || {}), [provider]: voiceId } } : c);
     saveContacts(contacts);
 }
 function currentDraft() {
@@ -243,7 +244,7 @@ function renderConversation() {
         }
         const send = el('button', 'bb-compose-send', '发送'); send.type = 'button'; send.dataset.bbAction = 'send-attachment'; send.disabled = !allowed || sending;
         const cancel = el('button', 'bb-reply-retry', '取消'); cancel.type = 'button'; cancel.dataset.bbAction = 'cancel-attachment';
-        form.append(send, cancel, el('span', 'bb-switch-hint', attachmentType === 'image' ? '发送画面描述；暂不上传或生成图片。' : attachmentType === 'voice' ? '发送语音文字；声音播放在第六段接入。' : '')); composeWrap.append(form);
+        form.append(send, cancel, el('span', 'bb-switch-hint', attachmentType === 'image' ? '发送画面描述；暂不上传或生成图片。' : attachmentType === 'voice' ? '发送语音文字；联系人配好音色后可点击播放。' : '')); composeWrap.append(form);
     }
     const composer = el('div', 'bb-composer');
     const plus = el('button', 'bb-composer-plus', '+'); plus.type = 'button'; plus.disabled = !allowed || sending; plus.dataset.bbAction = 'attachments'; plus.setAttribute('aria-label', '添加语音、转账、图片或定位');
@@ -255,6 +256,9 @@ function renderConversation() {
 
 function renderContacts() {
     const wrap = el('div', 'bb-settings');
+    const provider = getSettings().voiceProvider;
+    wrap.append(el('p', 'bb-switch-hint', `当前语音服务：${provider === 'elevenlabs' ? 'ElevenLabs' : 'MiniMax'}。在「设置」切换服务；每位角色的音色单独保存，选项直接读取梨园音色库。`));
+    const refresh = el('button', 'bb-reply-retry', '重新读取梨园音色'); refresh.type = 'button'; refresh.dataset.bbAction = 'refresh-playhouse-voices'; wrap.append(refresh);
     const extract = el('button', 'bb-reply-retry', extracting ? '正在分批提取…' : candidates ? '重新提取' : '从角色卡和绑定世界书提取');
     extract.type = 'button'; extract.dataset.bbAction = 'extract-contacts'; extract.disabled = extracting || isGenerationBusy();
     wrap.append(extract);
@@ -283,25 +287,17 @@ function renderContacts() {
             const option = el('option', null, title); option.value = value; option.selected = contact.level === value; level.append(option);
         }
         row.append(level);
-        const provider = el('select', 'bb-settings-input'); provider.dataset.bbVoiceProvider = contact.name;
-        for (const [value, title] of [['', '不配音色 · 只看文字'], ['minimax', 'MiniMax'], ['elevenlabs', 'ElevenLabs']]) {
-            const option = el('option', null, title); option.value = value; option.selected = (contact.voice?.provider || '') === value; provider.append(option);
+        const voices = knownVoices(provider), chosen = contact.voice?.[provider] || (contact.voice?.provider === provider ? contact.voice?.voiceId : '') || '';
+        const voiceLabel = el('label', 'bb-entry-setting'); voiceLabel.append(el('span', 'bb-switch-title', `${contact.name}的音色`));
+        const select = el('select', 'bb-settings-input'); select.dataset.bbVoiceSelect = contact.name;
+        for (const [value, title] of [['', '不配音色 · 只看文字'], ...voices.map(v => [v.voiceId, v.label])]) {
+            const option = el('option', null, title); option.value = value; option.selected = chosen === value; select.append(option);
         }
-        row.append(provider);
-        if (contact.voice?.provider) {
-            const voices = knownVoices(contact.voice.provider), chosen = contact.voice.voiceId || '';
-            const select = el('select', 'bb-settings-input'); select.dataset.bbVoiceSelect = contact.name;
-            for (const [value, title] of [['', '选择音色'], ...voices.map(v => [v.voiceId, v.label])]) {
-                const option = el('option', null, title); option.value = value; option.selected = chosen === value; select.append(option);
-            }
-            if (chosen && !voices.some(v => v.voiceId === chosen)) { const option = el('option', null, `${chosen}（手动填写）`); option.value = chosen; option.selected = true; select.append(option); }
-            row.append(select);
-            const manual = el('input', 'bb-settings-input'); manual.type = 'text'; manual.placeholder = '或手动输入 voice_id';
-            manual.value = chosen; manual.dataset.bbVoiceId = contact.name; row.append(manual);
-            const refresh = el('button', 'bb-reply-retry', voiceLoadingId === contact.name ? '正在获取音色…' : '刷新音色列表');
-            refresh.type = 'button'; refresh.disabled = Boolean(voiceLoadingId); refresh.dataset.bbAction = 'load-voices'; refresh.dataset.bbContact = contact.name;
-            row.append(refresh, el('span', 'bb-switch-hint', `Key 来源：${voiceSource(contact.voice.provider).source}`));
-        }
+        if (chosen && !voices.some(v => v.voiceId === chosen)) { const option = el('option', null, `${chosen}（已绑定）`); option.value = chosen; option.selected = true; select.append(option); }
+        voiceLabel.append(select); row.append(voiceLabel);
+        const manual = el('input', 'bb-settings-input'); manual.type = 'text'; manual.placeholder = '或手动输入 voice_id';
+        manual.value = chosen; manual.dataset.bbVoiceId = contact.name; row.append(manual);
+        row.append(el('span', 'bb-switch-hint', `当前服务 Key 来源：${voiceSource(provider).source}${voices.length ? '' : '；梨园音色库暂无此服务的音色'}`));
         wrap.append(row);
     }
     return wrap;
@@ -369,7 +365,7 @@ function renderSettings() {
     const voice = el('label', 'bb-switch');
     const voiceText = el('span', 'bb-switch-text');
     voiceText.append(el('span', 'bb-switch-title', '语音消息模式'),
-        el('span', 'bb-switch-hint', '开启后点击语音卡片展开文字，关闭后直接显示文字。声音播放随后开放。'));
+        el('span', 'bb-switch-hint', '开启后点击语音卡片播放并展开文字；关闭后直接显示文字。未配音色时仍可展开文字。'));
     const voiceToggle = el('input', 'bb-toggle'); voiceToggle.type = 'checkbox';
     voiceToggle.checked = s.voiceEnabled; voiceToggle.dataset.bbSetting = 'voiceEnabled';
     voice.append(voiceText, voiceToggle);
@@ -449,8 +445,9 @@ function renderSettings() {
         }
     }
     const tts = el('section', 'bb-entry-setting bb-api-settings');
-    tts.append(el('span', 'bb-switch-title', '语音服务'), el('span', 'bb-switch-hint', '优先实时使用梨园里已有的 Key；梨园没填才用下方青鸟自己的 Key。'));
-    for (const [provider, label, config] of [['minimax', 'MiniMax', s.ttsMiniMax], ['elevenlabs', 'ElevenLabs', s.ttsElevenLabs]]) {
+    tts.append(el('span', 'bb-switch-title', '语音服务'), el('span', 'bb-switch-hint', '在此切换青鸟的配音接口；各角色的 MiniMax 和 ElevenLabs 音色分别在「通讯录」选取。优先使用梨园里该服务的 Key。'));
+    tts.append(settingsChoices('配音接口', 'voiceProvider', s.voiceProvider, [['minimax', 'MiniMax'], ['elevenlabs', 'ElevenLabs']]));
+    for (const [provider, label, config] of [['minimax', 'MiniMax', s.ttsMiniMax], ['elevenlabs', 'ElevenLabs', s.ttsElevenLabs]].filter(([provider]) => provider === s.voiceProvider)) {
         tts.append(el('span', 'bb-switch-title', `${label} · 当前使用${voiceSource(provider).source}`));
         for (const [field, title] of [['baseUrl', '地址'], ['apiKey', 'Key'], ...(provider === 'minimax' ? [['groupId', 'GroupId']] : []), ['model', '模型']]) {
             const entry = el('label', 'bb-entry-setting'); entry.append(el('span', 'bb-switch-hint', `${label} ${title}`));
@@ -543,15 +540,7 @@ async function onClick(event) {
         const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
         try { requestPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
     }
-    if (btn.dataset.bbAction === 'load-voices') {
-        const name = btn.dataset.bbContact, contact = selectedContacts().find(c => c.name === name);
-        if (!contact?.voice?.provider || voiceLoadingId) return;
-        voiceLoadingId = name; render();
-        try { await loadVoiceCatalog(contact.voice.provider); toastr.info('音色列表已更新'); }
-        catch (error) { toastr.error(`获取音色失败：${error.message}`); }
-        finally { voiceLoadingId = ''; if (isOpen && page === 'contacts') render(); }
-        return;
-    }
+    if (btn.dataset.bbAction === 'refresh-playhouse-voices') { render(); return; }
     if (btn.dataset.bbAction === 'attachments') { attachmentType = attachmentType ? null : 'menu'; render(); return; }
     if (btn.dataset.bbAction === 'cancel-attachment') { attachmentType = null; render(); return; }
     if (btn.dataset.bbAttachment) { attachmentType = btn.dataset.bbAttachment; currentDraft().content = ''; currentDraft().note = ''; render(); root.querySelector('[data-bb-draft="content"]')?.focus(); return; }
@@ -631,11 +620,8 @@ function onChange(event) {
         setSetting(key, { ...getSettings()[key], [input.dataset.bbTtsField]: input.value.trim() });
         if (input.dataset.bbTtsField === 'apiKey') render(); return;
     }
-    if (input.dataset?.bbVoiceProvider !== undefined) {
-        persistContactVoice(input.dataset.bbVoiceProvider, { provider: input.value, voiceId: '' }); render(); return;
-    }
     if (input.dataset?.bbVoiceSelect !== undefined || input.dataset?.bbVoiceId !== undefined) {
-        persistContactVoice(input.dataset.bbVoiceSelect ?? input.dataset.bbVoiceId, { voiceId: input.value.trim() });
+        persistContactVoice(input.dataset.bbVoiceSelect ?? input.dataset.bbVoiceId, input.value.trim());
         render(); return;
     }
     if (input.dataset?.bbStatusTag !== undefined) {
@@ -674,6 +660,8 @@ function onChange(event) {
     } else if (key === 'voiceEnabled') {
         expandedVoiceIds.clear();
         setSetting('voiceEnabled', input.checked);
+    } else if (key === 'voiceProvider' && ['minimax', 'elevenlabs'].includes(input.value)) {
+        stopVoice(); setSetting('voiceProvider', input.value); render();
     } else if (key === 'thinkTags') {
         const tags = parseTagNames(input.value); setSetting('thinkTags', tags); input.value = tags.join(', ');
     } else if (key === 'proactiveEnabled') {

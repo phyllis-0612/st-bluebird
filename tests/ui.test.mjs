@@ -21,18 +21,19 @@ function panelHarness() {
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
     const sent = [], replies = [], status = { phase: 'idle' };
-    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], apiPresets: [], activeApiPresetId: 'tavern', ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' }, ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' }, voiceCacheMB: 200, proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
+    let contacts = [{ name: '剧情', source: { type: 'card' }, level: 'normal', voice: {} }, { name: '陆', source: { type: 'card' }, level: 'normal', voice: {} }];
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, voiceProvider: 'minimax', theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], apiPresets: [], activeApiPresetId: 'tavern', ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' }, ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' }, voiceCacheMB: 200, proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
         rootNode: root, icons, fingerprint, detectChatTags, normalizeTagName: value => String(value).replace(/[<>]/g, '').trim(),
         parseTagNames: value => [...new Set(String(value).split(/[,，\s]+/).map(t => t.replace(/[<>]/g, '').trim()).filter(Boolean))],
-        activeApiPreset: () => settings.apiPresets.find(p => p.id === settings.activeApiPresetId), saveApiPresets: (list, id) => { settings.apiPresets = list; settings.activeApiPresetId = id; }, listApiModels: async () => ['flash'], knownVoices: () => [], loadVoiceCatalog: async () => [], voiceSource: () => ({ source: '未配置' }), voiceAvailability: () => ({ ready: false }), playingVoiceId: () => '', playVoice: async () => false, stopVoice() {}, getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.5.2', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        activeApiPreset: () => settings.apiPresets.find(p => p.id === settings.activeApiPresetId), saveApiPresets: (list, id) => { settings.apiPresets = list; settings.activeApiPresetId = id; }, listApiModels: async () => ['flash'], knownVoices: provider => provider === 'minimax' ? [{ voiceId: 'm-1', label: '梨园小米' }] : [{ voiceId: 'e-1', label: '梨园小十一' }], voiceSource: () => ({ source: '梨园' }), voiceAvailability: () => ({ ready: false }), playingVoiceId: () => '', playVoice: async () => false, stopVoice() {}, getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => contacts, saveContacts: list => { contacts = list; }, extractContacts: async () => [], VERSION: '0.6.3', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0, chat: [{ mes: '<灵魂疏理>隐秘</灵魂疏理><状态栏>体力 80</状态栏><content>正文</content>' }] }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
         scrollToFloor() {}, processTransfer() {}, getPhoneStatus: () => status, isGenerationBusy: () => false,
         captureCurrentChat: () => ({}), currentChatMatches: () => true, sendPhoneMessage: async (...args) => { sent.push(args); }, requestPhoneReply: name => { replies.push(name); }, toastr: { info() {}, error() {} } });
     vm.runInContext(source('entry-controls') + '\n' + source('panel') + '\nroot = rootNode;', scope);
-    return { document, root, scope, settings, sent, replies, status, reads: () => readCalls, state: () => state,
+    return { document, root, scope, settings, sent, replies, status, contacts: () => contacts, reads: () => readCalls, state: () => state,
         setState(s) { state = s; }, click: async button => scope.onClick({ target: button }) };
 }
 
@@ -211,6 +212,24 @@ test('proactive settings persist button choices and numeric values, reject inval
     await h.click(h.root.querySelector('[data-bb-page="settings"]'));
     assert.equal(h.root.querySelector('[data-bb-setting="proactiveEnabled"]').checked, false);
     assert.equal(h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]').find(n => n.value === 'clingy').checked, true);
+});
+
+test('settings switch the TTS service while contacts keep one Playhouse voice per provider', async () => {
+    const h = panelHarness(); h.scope.openPanel();
+    await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
+    let pick = h.root.querySelector('[data-bb-voice-select="陆"]');
+    assert.ok(pick.children.some(option => option.textContent === '梨园小米'));
+    pick.value = 'm-1'; h.scope.onChange({ target: pick });
+    assert.equal(h.contacts().find(c => c.name === '陆').voice.minimax, 'm-1');
+    await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    const eleven = h.root.querySelectorAll('[data-bb-setting="voiceProvider"]').find(input => input.value === 'elevenlabs');
+    h.scope.onChange({ target: eleven }); assert.equal(h.settings.voiceProvider, 'elevenlabs');
+    await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
+    pick = h.root.querySelector('[data-bb-voice-select="陆"]');
+    assert.ok(pick.children.some(option => option.textContent === '梨园小十一'));
+    pick.value = 'e-1'; h.scope.onChange({ target: pick });
+    assert.equal(h.contacts().find(c => c.name === '陆').voice.elevenlabs, 'e-1');
+    assert.equal(h.contacts().find(c => c.name === '陆').voice.minimax, 'm-1');
 });
 
 test('Chinese thought tag persists and detected status tag can be checked and unchecked', async () => {

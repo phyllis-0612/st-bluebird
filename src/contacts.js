@@ -1,10 +1,19 @@
 // 第五段：联系人目录只存来源引用，世界书正文始终按需读取。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.6.2';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.6.3';
 import { world_info } from '../../../../world-info.js';
-import { storyContacts } from './messages.js?v=0.6.2';
-import { requestBluebirdRaw } from './api.js?v=0.6.2';
+import { storyContacts } from './messages.js?v=0.6.3';
+import { requestBluebirdRaw } from './api.js?v=0.6.3';
 
 const CONTACT_LEVELS = ['restrained', 'normal', 'clingy'];
+const VOICE_PROVIDERS = ['minimax', 'elevenlabs'];
+function voiceBindings(value) {
+    const voices = {};
+    for (const provider of VOICE_PROVIDERS) {
+        const id = value?.[provider] || (value?.provider === provider ? value.voiceId : '');
+        if (typeof id === 'string' && id.trim()) voices[provider] = id.trim();
+    }
+    return voices;
+}
 const filename = avatar => String(avatar || '').replace(/\.[^/.]+$/, '');
 const ownerKey = context => context.groupId != null && context.groupId !== '' ? `group:${context.groupId}`
     : `card:${context.characters?.[context.characterId]?.avatar || context.characterId}`;
@@ -20,7 +29,7 @@ export function selectedContacts(context = ctx(), settings = getSettings()) {
         if (contact.source.type === 'world' && typeof contact.source.book === 'string' && Number.isSafeInteger(Number(contact.source.uid)) && !byName.has(key)) byName.set(key, contact);
         if (byName.has(key) && contact.source.type === 'card') { byName.get(key).level = contact.level; byName.get(key).voice = contact.voice || null; }
     }
-    return [...byName.values()];
+    return [...byName.values()].map(contact => ({ ...contact, voice: voiceBindings(contact.voice) }));
 }
 
 export function saveContacts(list, context = ctx()) {
@@ -28,8 +37,7 @@ export function saveContacts(list, context = ctx()) {
     const contacts = { ...(settings.contacts && !Array.isArray(settings.contacts) ? settings.contacts : {}), [ownerKey(context)]: list.map(c => ({
         name: c.name.trim(), source: c.source.type === 'world'
             ? { type: 'world', book: c.source.book, uid: Number(c.source.uid) } : { type: 'card' }, level: c.level,
-        voice: ['minimax', 'elevenlabs'].includes(c.voice?.provider) && typeof c.voice?.voiceId === 'string'
-            ? { provider: c.voice.provider, voiceId: c.voice.voiceId.trim() } : null,
+        voice: voiceBindings(c.voice),
     })) };
     setSetting('contacts', contacts);
 }

@@ -2,13 +2,13 @@
 // SillyTavern 小手机扩展：角色在剧情里主动给你发消息，手机里聊过的内容自然回到剧情。
 // 当前进度：第六段 · 语音
 
-import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.6.2';
-import { refreshPanel, openConversation } from './src/panel.js?v=0.6.2';
-import { mountEntry, mountSettingsBlock, entryIsMounted, setUnread } from './src/entry.js?v=0.6.2';
-import { onChatStateChanged } from './src/chat-store.js?v=0.6.2';
-import { initChatIntegration } from './src/chat-integration.js?v=0.6.2';
-import { initPhoneChat, onPhoneStatusChanged } from './src/phone-chat.js?v=0.6.2';
-import { initProactiveMessages } from './src/proactive.js?v=0.6.2';
+import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.6.3';
+import { refreshPanel, openConversation } from './src/panel.js?v=0.6.3';
+import { mountEntry, mountSettingsBlock, entryIsMounted, setUnread } from './src/entry.js?v=0.6.3';
+import { onChatStateChanged } from './src/chat-store.js?v=0.6.3';
+import { initChatIntegration } from './src/chat-integration.js?v=0.6.3';
+import { initPhoneChat, onPhoneStatusChanged } from './src/phone-chat.js?v=0.6.3';
+import { initProactiveMessages } from './src/proactive.js?v=0.6.3';
 
 let mountObserver = null;
 
