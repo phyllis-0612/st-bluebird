@@ -514,6 +514,87 @@ html.bb-open body {
     font-weight: 700;
 }
 
+/* ---------- 会话与消息 ---------- */
+
+#bluebird-panel .bb-conversations { padding: 6px 16px 24px; }
+#bluebird-panel .bb-section-caption { margin: 4px 4px 16px; color: var(--bb-sub); font-size: 12px; letter-spacing: .1em; }
+#bluebird-panel .bb-conversation {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 88px;
+    margin: 0 0 10px; padding: 14px; border: 1px solid var(--bb-line);
+    border-radius: 18px; background: var(--bb-surface); text-align: left;
+}
+#bluebird-panel .bb-avatar {
+    flex: none; display: grid; place-items: center; width: 48px; height: 48px;
+    border-radius: 16px; background: var(--bb-accent-soft); color: var(--bb-accent-strong);
+    font: 22px var(--bb-serif);
+}
+#bluebird-panel .bb-conversation-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+#bluebird-panel .bb-conversation-title { font-weight: 700; }
+#bluebird-panel .bb-conversation-preview { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--bb-sub); }
+#bluebird-panel .bb-conversation-meta { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+#bluebird-panel .bb-floor-label { font-size: 11px; color: var(--bb-sub); white-space: nowrap; }
+#bluebird-panel .bb-unread-pill { min-width: 21px; padding: 2px 6px; border-radius: 12px; background: var(--bb-warm); color: var(--bb-warm-ink); font-size: 11px; text-align: center; }
+#bluebird-panel .bb-chat { display: flex; flex-direction: column; min-height: 100%; }
+#bluebird-panel .bb-chat-header {
+    position: sticky; top: 0; z-index: 2; display: flex; gap: 6px; align-items: center;
+    padding: 6px 16px 10px 8px; border-bottom: 1px solid var(--bb-line); background: var(--bb-bg);
+}
+#bluebird-panel .bb-back { flex: none; width: 44px; height: 44px; border-radius: 14px; font-size: 34px; line-height: 1; color: var(--bb-accent); }
+#bluebird-panel .bb-chat-heading { min-width: 0; }
+#bluebird-panel .bb-chat-name { margin: 0; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+#bluebird-panel .bb-presence { margin: 2px 0 0; font-size: 12px; color: var(--bb-sub); }
+#bluebird-panel .bb-message-list { flex: 1; padding: 8px 16px 24px; }
+#bluebird-panel .bb-floor-divider {
+    display: block; min-height: 44px; margin: 10px auto 8px; padding: 8px 16px;
+    color: var(--bb-sub); font-size: 11px; border-radius: 20px;
+}
+#bluebird-panel .bb-floor-divider:active { background: var(--bb-accent-soft); }
+#bluebird-panel .bb-message { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 14px; }
+#bluebird-panel .bb-message.is-self { align-items: flex-end; }
+#bluebird-panel .bb-message-sender { margin: 0 3px; color: var(--bb-sub); font-size: 11px; }
+#bluebird-panel .bb-bubble {
+    max-width: 88%; min-width: 40px; padding: 11px 14px; border: 1px solid var(--bb-line);
+    border-radius: 4px 16px 16px 16px; background: var(--bb-surface);
+    color: var(--bb-ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65;
+}
+#bluebird-panel .is-self .bb-bubble { border-radius: 16px 4px 16px 16px; background: var(--bb-accent-soft); }
+#bluebird-panel .bb-card { min-width: min(240px, 80vw); }
+#bluebird-panel .bb-card-heading { display: flex; align-items: center; gap: 9px; white-space: normal; }
+#bluebird-panel .bb-card-heading strong { flex: 1; min-width: 0; font-size: 14px; }
+#bluebird-panel .bb-card-icon { flex: none; color: var(--bb-accent); }
+#bluebird-panel .bb-card-text { margin: 9px 0 4px; font-size: 14px; white-space: pre-wrap; }
+#bluebird-panel .bb-card-caption { font-size: 11px; color: var(--bb-sub); }
+#bluebird-panel .bb-card-transfer { background: var(--bb-accent-soft); }
+#bluebird-panel .bb-card-heading .bb-transfer-amount { font-size: 23px; font-weight: 600; }
+#bluebird-panel .bb-transfer-actions { display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--bb-line); padding-top: 8px; }
+#bluebird-panel .bb-transfer-action { flex: 1; min-height: 44px; border-radius: 10px; color: var(--bb-accent-strong); font-size: 13px; }
+#bluebird-panel .bb-transfer-action:first-child { background: var(--bb-accent); color: var(--bb-accent-ink); }
+#bluebird-panel .bb-transfer-action:disabled { opacity: .45; cursor: wait; }
+#bluebird-panel .bb-composer {
+    position: sticky; bottom: 0; display: flex; gap: 8px; align-items: center;
+    padding: 10px 16px; border-top: 1px solid var(--bb-line); background: var(--bb-bg);
+}
+#bluebird-panel .bb-composer-plus { flex: none; width: 44px; height: 44px; font-size: 27px; color: var(--bb-sub); }
+#bluebird-panel input.bb-compose-input, #bluebird-panel input.bb-settings-input {
+    flex: 1; width: 100%; min-width: 0; height: 44px; padding: 10px 12px;
+    margin: 0; border: 1px solid var(--bb-line); border-radius: 12px;
+    background: var(--bb-surface); color: var(--bb-ink); font: 16px var(--bb-sans); box-shadow: none;
+}
+#bluebird-panel input.bb-compose-input::placeholder { color: var(--bb-sub); opacity: 1; font-size: 12px; }
+#bluebird-panel input.bb-compose-input:disabled { opacity: .7; -webkit-text-fill-color: var(--bb-sub); }
+#bluebird-panel .bb-composer-plus:disabled { opacity: .5; cursor: default; }
+
+/* 提醒直接加入已完成的楼层 DOM，沿用酒馆颜色，不受 custom- 类名前缀影响。 */
+#chat .mes_text .bb-floor-notices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#chat .mes_text button.bb-inline-notice {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 7px 12px; margin: 0;
+    border: 1px solid currentColor; border-radius: 12px; background: transparent;
+    color: inherit; font: inherit; font-size: .85em; line-height: 1.5; text-align: left;
+    cursor: pointer; box-shadow: none; opacity: .85; touch-action: manipulation;
+}
+#chat .mes_text button.bb-inline-notice:active { opacity: 1; }
+#chat .mes.bb-floor-highlight { outline: 2px solid var(--SmartThemeQuoteColor, #5FB1B8); outline-offset: -2px; }
+
 /* ---------- 减少动效 ---------- */
 
 @media (prefers-reduced-motion: reduce) {

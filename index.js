@@ -1,10 +1,12 @@
 // 青鸟 · Bluebird
 // SillyTavern 小手机扩展：角色在剧情里主动给你发消息，手机里聊过的内容自然回到剧情。
-// 当前进度：第一段 · 骨架
+// 当前进度：第二段 · 消息和楼层
 
-import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.1.3';
-import { refreshPanel } from './src/panel.js?v=0.1.3';
-import { mountEntry, mountSettingsBlock, entryIsMounted } from './src/entry.js?v=0.1.3';
+import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.2.0';
+import { refreshPanel, openConversation } from './src/panel.js?v=0.2.0';
+import { mountEntry, mountSettingsBlock, entryIsMounted, setUnread } from './src/entry.js?v=0.2.0';
+import { onChatStateChanged } from './src/chat-store.js?v=0.2.0';
+import { initChatIntegration } from './src/chat-integration.js?v=0.2.0';
 
 let mountObserver = null;
 
@@ -40,13 +42,15 @@ function init() {
     getSettings();          // 补齐默认设置
     onSettingChanged((key) => {
         if (key === 'entryMode' || key === 'enabled') ensureUI();
+        if (key === 'enabled') refreshPanel();
     });
     ensureUI();             // 扩展设置块和输入框入口，必要时补挂
     watchSystemTheme();     // 「跟随系统」时跟着系统换深浅色
 
     const context = ctx();
     const events = context.eventTypes || context.event_types;
-    context.eventSource.on(events.CHAT_CHANGED, () => refreshPanel());
+    onChatStateChanged((state, reason) => { setUnread(state.unread); refreshPanel(reason); });
+    initChatIntegration(openConversation);
     if (events.APP_INITIALIZED) context.eventSource.on(events.APP_INITIALIZED, ensureUI);
     if (events.APP_READY) context.eventSource.on(events.APP_READY, ensureUI);
 

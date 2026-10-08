@@ -1,10 +1,12 @@
 // 青鸟 · 手机面板
 // 手机端全屏面板。
-// 第一段只有外壳和三个页面：消息、通讯录、设置。
+// 第二段：读取楼层消息、展示会话和卡片；主动输入随后开放。
 
-import { icons } from './icons.js?v=0.1.3';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.1.3';
-import { createEntryModeControl } from './entry-controls.js?v=0.1.3';
+import { icons } from './icons.js?v=0.2.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.2.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.2.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.2.0';
+import { scrollToFloor } from './chat-integration.js?v=0.2.0';
 
 let root = null;
 let page = 'list';
@@ -12,6 +14,8 @@ let isOpen = false;
 let returnFocus = null;
 const backgroundNodes = new Map();
 let backgroundObserver = null;
+let conversationId = null;
+let transferPending = false;
 
 /** 全屏时隔离背后的酒馆控件，关闭时恢复原来的 inert 状态。 */
 function lockBackground() {
@@ -71,7 +75,108 @@ function emptyState(title, text) {
 }
 
 function renderList() {
-    return emptyState('还没有消息', '消息收发将在后续版本开放，当前可以体验界面和配色。');
+    const state = getChatState();
+    if (!state.conversations.length) return emptyState('还没有消息', '角色发来的手机消息会出现在这里。当前版本可用楼层标签测试，主动聊天随后开放。');
+    const list = el('div', 'bb-conversations');
+    list.append(el('p', 'bb-section-caption', '剧情之外，也有牵挂'));
+    for (const conversation of state.conversations) {
+        const button = el('button', 'bb-conversation'); button.type = 'button';
+        button.dataset.bbConversation = conversation.id;
+        const avatar = el('span', 'bb-avatar', [...conversation.name][0] || '鸟');
+        avatar.setAttribute('aria-hidden', 'true');
+        const content = el('span', 'bb-conversation-copy');
+        const title = el('span', 'bb-conversation-title', conversation.name);
+        const last = conversation.messages.at(-1);
+        content.append(title, el('span', 'bb-conversation-preview', `${last.isSelf ? '我：' : ''}${messagePreview(last)}`));
+        const meta = el('span', 'bb-conversation-meta');
+        meta.append(el('span', 'bb-floor-label', `第 ${last.floorIndex + 1} 楼`));
+        if (conversation.unread) meta.append(el('span', 'bb-unread-pill', conversation.unread > 99 ? '99+' : String(conversation.unread)));
+        button.append(avatar, content, meta); list.append(button);
+    }
+    return list;
+}
+
+function messagePreview(message) {
+    if (message.type === 'transfer') return `[转账] ¥${message.content}${message.note ? ' · ' + message.note : ''}`;
+    if (message.type === 'voice') return `[语音] ${message.content}`;
+    if (message.type === 'image') return `[图片] ${message.content}`;
+    if (message.type === 'location') return `[位置] ${message.content}`;
+    return message.content;
+}
+
+function cardIcon(type) {
+    const span = el('span', 'bb-card-icon');
+    span.innerHTML = type === 'voice' ? icons.voice(22) : type === 'image' ? icons.image(24)
+        : type === 'location' ? icons.location(24) : icons.transfer(24);
+    return span;
+}
+
+function renderMessage(message) {
+    const row = el('article', 'bb-message' + (message.isSelf ? ' is-self' : ''));
+    row.append(el('span', 'bb-message-sender', message.sender));
+    const bubble = el('div', 'bb-bubble' + (message.type !== 'text' ? ` bb-card bb-card-${message.type}` : ''));
+    if (message.type === 'text') bubble.textContent = message.content;
+    else if (message.type === 'voice') {
+        const heading = el('div', 'bb-card-heading');
+        heading.append(cardIcon('voice'), el('strong', '', '语音消息'), el('span', 'bb-card-caption', '文字版'));
+        bubble.append(heading, el('p', 'bb-card-text', message.content));
+    } else if (message.type === 'image') {
+        const heading = el('div', 'bb-card-heading'); heading.append(cardIcon('image'), el('strong', '', '图片'));
+        bubble.append(heading, el('p', 'bb-card-text', message.content), el('span', 'bb-card-caption', '画面描述'));
+    } else if (message.type === 'location') {
+        const heading = el('div', 'bb-card-heading'); heading.append(cardIcon('location'), el('strong', '', message.content));
+        bubble.append(heading); if (message.note) bubble.append(el('p', 'bb-card-text', message.note));
+        bubble.append(el('span', 'bb-card-caption', '共享位置'));
+    } else {
+        const heading = el('div', 'bb-card-heading'); heading.append(cardIcon('transfer'), el('strong', 'bb-transfer-amount', `¥${message.content}`));
+        bubble.append(heading); if (message.note) bubble.append(el('p', 'bb-card-text', message.note));
+        bubble.append(el('span', 'bb-card-caption', message.status === 'accepted' ? '已收款'
+            : message.status === 'returned' ? '已退还' : message.isSelf ? '等待对方收款' : '待收款'));
+        if (!message.status && !message.isSelf) {
+            const actions = el('div', 'bb-transfer-actions');
+            for (const [status, label] of [['accepted', '收款'], ['returned', '退还']]) {
+                const button = el('button', 'bb-transfer-action', label); button.type = 'button';
+                button.dataset.bbTransfer = message.id; button.dataset.bbTransferStatus = status;
+                button.disabled = transferPending; actions.append(button);
+            }
+            bubble.append(actions);
+        }
+    }
+    row.append(bubble); return row;
+}
+
+function renderConversation() {
+    markConversationRead(conversationId);
+    const state = getChatState(), conversation = state.conversations.find(c => c.id === conversationId);
+    if (!conversation) return emptyState('这段会话已没有消息', '对应楼层可能已删除，或当前 swipe 没有手机消息。返回消息页查看其他会话。');
+    const wrap = el('div', 'bb-chat');
+    const header = el('header', 'bb-chat-header');
+    const back = el('button', 'bb-back', '‹'); back.type = 'button'; back.dataset.bbAction = 'back';
+    back.setAttribute('aria-label', '返回消息列表');
+    const title = el('div', 'bb-chat-heading');
+    const presentText = state.present === null ? '在场信息未知' : conversation.members.some(name => state.present.includes(name))
+        ? '最近记录：与你同场' : '最近记录：不在你身边';
+    title.append(el('h3', 'bb-chat-name', conversation.name), el('p', 'bb-presence', presentText));
+    if (state.presentFloor !== null) title.querySelector('.bb-presence').title = `来自第 ${state.presentFloor + 1} 楼的在场名单`;
+    header.append(back, title); wrap.append(header);
+    const messages = el('div', 'bb-message-list');
+    let previousFloor = null;
+    for (const message of conversation.messages) {
+        if (message.floorIndex !== previousFloor) {
+            const divider = el('button', 'bb-floor-divider', `第 ${message.floorIndex + 1} 楼${message.source === 'phone' ? ' · 手机聊天' : ''} ↗`);
+            divider.type = 'button'; divider.dataset.bbFloorMessage = message.id;
+            divider.setAttribute('aria-label', `返回酒馆第 ${message.floorIndex + 1} 楼`);
+            messages.append(divider); previousFloor = message.floorIndex;
+        }
+        messages.append(renderMessage(message));
+    }
+    wrap.append(messages);
+    const composer = el('div', 'bb-composer');
+    const plus = el('button', 'bb-composer-plus', '+'); plus.type = 'button'; plus.disabled = true; plus.setAttribute('aria-label', '附件，随后开放');
+    const input = el('input', 'bb-compose-input'); input.placeholder = '主动聊天将在第四段开放'; input.disabled = true;
+    input.setAttribute('aria-label', '消息输入，随后开放');
+    composer.append(plus, input); wrap.append(composer);
+    return wrap;
 }
 
 function renderContacts() {
@@ -109,23 +214,28 @@ function renderSettings() {
     const notice = el('label', 'bb-switch');
     const text = el('span', 'bb-switch-text');
     text.append(
-        el('span', 'bb-switch-title', '正文里显示消息提醒 · 待开放'),
-        el('span', 'bb-switch-hint', '后续版本开放：在对应楼层显示提醒，点击打开青鸟'),
+        el('span', 'bb-switch-title', '正文里显示消息提醒'),
+        el('span', 'bb-switch-hint', '在对应楼层显示提醒，点击直接打开会话；关闭后消息仍保留。'),
     );
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.className = 'bb-toggle';
     toggle.checked = !!s.inlineNotice;
-    toggle.disabled = true;
     toggle.dataset.bbSetting = 'inlineNotice';
     notice.append(text, toggle);
 
-    wrap.append(themeField, entryField, notice, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    const thinking = el('label', 'bb-entry-setting');
+    thinking.append(el('span', 'bb-switch-title', '忽略的思考标签'), el('span', 'bb-switch-hint', '逗号分隔标签名，思考中的手机消息不会计入。'));
+    const tagInput = el('input', 'bb-settings-input'); tagInput.type = 'text'; tagInput.value = s.thinkTags.join(', ');
+    tagInput.dataset.bbSetting = 'thinkTags'; tagInput.autocapitalize = 'off'; tagInput.spellcheck = false;
+    thinking.append(tagInput);
+    wrap.append(themeField, entryField, notice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
 const pages = {
     list: renderList,
+    conversation: renderConversation,
     contacts: renderContacts,
     settings: renderSettings,
 };
@@ -136,7 +246,7 @@ function render() {
     if (!root) return;
     root.querySelector('.bb-story').textContent = storyLabel();
     root.querySelectorAll('.bb-tab').forEach((btn) => {
-        const active = btn.dataset.bbPage === page;
+        const active = btn.dataset.bbPage === page || (page === 'conversation' && btn.dataset.bbPage === 'list');
         btn.classList.toggle('is-active', active);
         if (active) btn.setAttribute('aria-current', 'page');
         else btn.removeAttribute('aria-current');
@@ -144,15 +254,34 @@ function render() {
     root.querySelector('.bb-body').replaceChildren(pages[page]());
 }
 
-function onClick(event) {
+async function onClick(event) {
     const btn = event.target.closest('button');
     if (!btn || !root.contains(btn)) return;
     if (btn.dataset.bbAction === 'close') {
         closePanel();
         return;
     }
+    if (btn.dataset.bbAction === 'back') { page = 'list'; conversationId = null; render(); return; }
+    if (btn.dataset.bbConversation) { openConversation(btn.dataset.bbConversation); return; }
+    if (btn.dataset.bbFloorMessage) {
+        const message = getChatState().byId.get(btn.dataset.bbFloorMessage);
+        if (!message) { toastr.info('这条消息已经改变，请重新打开会话'); return; }
+        closePanel();
+        try { await scrollToFloor(message); } catch (error) { toastr.info(error.message); }
+        return;
+    }
+    if (btn.dataset.bbTransfer) {
+        if (transferPending) return;
+        transferPending = true;
+        root.querySelectorAll('[data-bb-transfer]').forEach(node => { node.disabled = true; });
+        try { await processTransfer(btn.dataset.bbTransfer, btn.dataset.bbTransferStatus); }
+        catch (error) { toastr.error(error.message || '转账状态保存失败，请重试'); }
+        finally { transferPending = false; if (isOpen && page === 'conversation') render(); }
+        return;
+    }
     if (btn.dataset.bbPage && btn.dataset.bbPage !== page) {
         page = btn.dataset.bbPage;
+        conversationId = null;
         render();
     }
 }
@@ -167,8 +296,8 @@ function onChange(event) {
         applyThemeEverywhere();
     } else if (key === 'inlineNotice') {
         setSetting('inlineNotice', input.checked);
-    } else if (key === 'entryMode' && ['floating', 'wand'].includes(input.value)) {
-        setSetting('entryMode', input.value);
+    } else if (key === 'thinkTags') {
+        setSetting('thinkTags', input.value.split(/[,，\s]+/).map(s => s.trim().toLowerCase()).filter(s => /^[a-z][a-z0-9_-]*$/.test(s)));
     }
 }
 
@@ -229,6 +358,7 @@ export function openPanel() {
     if (!getSettings().enabled) return;
     mountPanel();
     if (isOpen) return;
+    rebuildChatState('open');
     returnFocus = document.activeElement;
     root.hidden = false;
     isOpen = true;
@@ -258,6 +388,21 @@ export function togglePanel() {
 }
 
 /** 切换聊天后刷新剧情名等内容。 */
-export function refreshPanel() {
-    if (isOpen) render();
+export function refreshPanel(reason = 'update') {
+    if (reason === 'chat') { conversationId = null; if (page === 'conversation') page = 'list'; }
+    if (!getSettings().enabled) { closePanel(); return; }
+    if (isOpen && page !== 'settings' && reason !== 'read') {
+        const body = root.querySelector('.bb-body'), top = body.scrollTop;
+        const atBottom = body.scrollHeight - body.clientHeight - top < 80;
+        render();
+        body.scrollTop = page === 'conversation' && atBottom ? body.scrollHeight : top;
+    }
+}
+
+export function openConversation(id) {
+    if (!getSettings().enabled) return;
+    openPanel();
+    conversationId = id; page = 'conversation'; render();
+    const body = root.querySelector('.bb-body'); body.scrollTop = body.scrollHeight;
+    root.querySelector('[data-bb-action="back"]')?.focus({ preventScroll: true });
 }
