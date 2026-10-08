@@ -1,4 +1,4 @@
-import { getSettings, setSetting } from './settings.js?v=0.2.1';
+import { getSettings, setSetting } from './settings.js?v=0.3.0';
 
 /** 使用直接点选按钮，避免移动端原生选择器提交时序影响入口切换。 */
 export function createEntryModeControl() {

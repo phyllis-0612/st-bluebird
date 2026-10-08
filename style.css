@@ -280,6 +280,8 @@ html.bb-open body {
     background: var(--bb-card);
 }
 
+#bluebird-panel .bb-seg-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 #bluebird-panel .bb-seg input {
     position: absolute;
     width: 1px;

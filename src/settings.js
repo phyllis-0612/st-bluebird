@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.2.1';
+export const VERSION = '0.3.0';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
@@ -17,6 +17,10 @@ const DEFAULTS = Object.freeze({
     theme: 'auto',       // auto 跟随系统 | day 日间 | night 夜间
     inlineNotice: true,  // 正文里显示「某某发来几条消息」
     voiceEnabled: true,  // 语音消息显示为可点击卡片；关闭则直接显示文字
+    proactiveEnabled: true,
+    proactiveLevel: 'normal',
+    proactiveCooldown: 3, // 两次主线来信之间隔开的楼层，用户楼层也计入
+    proactiveDepth: 0,
     thinkTags: ['think', 'thinking', 'analysis', 'reasoning'],
     entryMode: 'floating', // floating 悬浮球 | wand 魔法棒
     floatPosition: null,   // 拖动后保存为可用屏幕范围内的比例位置
@@ -39,6 +43,10 @@ export function getSettings() {
     if (typeof s.enabled !== 'boolean') s.enabled = DEFAULTS.enabled;
     if (typeof s.inlineNotice !== 'boolean') s.inlineNotice = DEFAULTS.inlineNotice;
     if (typeof s.voiceEnabled !== 'boolean') s.voiceEnabled = DEFAULTS.voiceEnabled;
+    if (typeof s.proactiveEnabled !== 'boolean') s.proactiveEnabled = DEFAULTS.proactiveEnabled;
+    if (!['restrained', 'normal', 'clingy'].includes(s.proactiveLevel)) s.proactiveLevel = DEFAULTS.proactiveLevel;
+    if (!Number.isSafeInteger(s.proactiveCooldown) || s.proactiveCooldown < 0) s.proactiveCooldown = DEFAULTS.proactiveCooldown;
+    if (![0, 1].includes(s.proactiveDepth)) s.proactiveDepth = DEFAULTS.proactiveDepth;
     if (!Array.isArray(s.thinkTags)) s.thinkTags = [...DEFAULTS.thinkTags];
     s.thinkTags = [...new Set(s.thinkTags.filter(t => typeof t === 'string' && /^[a-z][a-z0-9_-]*$/i.test(t)).map(t => t.toLowerCase()))];
     if (!['auto', 'day', 'night'].includes(s.theme)) s.theme = DEFAULTS.theme;

@@ -2,12 +2,13 @@
 // 手机端全屏面板。
 // 第二段：读取楼层消息、展示会话和卡片；主动输入随后开放。
 
-import { icons } from './icons.js?v=0.2.1';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.2.1';
-import { createEntryModeControl } from './entry-controls.js?v=0.2.1';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.2.1';
-import { scrollToFloor } from './chat-integration.js?v=0.2.1';
-import { fingerprint } from './messages.js?v=0.2.1';
+import { icons } from './icons.js?v=0.3.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.3.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.3.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.3.0';
+import { scrollToFloor } from './chat-integration.js?v=0.3.0';
+import { fingerprint } from './messages.js?v=0.3.0';
+import { getStoryContacts } from './proactive.js?v=0.3.0';
 
 let root = null;
 let page = 'list';
@@ -78,7 +79,7 @@ function emptyState(title, text) {
 
 function renderList() {
     const state = getChatState();
-    if (!state.conversations.length) return emptyState('还没有消息', '角色发来的手机消息会出现在这里。当前版本可用楼层标签测试，主动聊天随后开放。');
+    if (!state.conversations.length) return emptyState('还没有消息', '联系人不在你身边、有合适时机时，会随剧情发来手机消息。你主动聊天将在第四段开放。');
     const list = el('div', 'bb-conversations');
     list.append(el('p', 'bb-section-caption', '剧情之外，也有牵挂'));
     for (const conversation of state.conversations) {
@@ -197,7 +198,29 @@ function renderConversation() {
 }
 
 function renderContacts() {
-    return emptyState('还没有联系人', '从角色卡和世界书一键提取联系人，会在之后的版本里加上。');
+    const names = getStoryContacts();
+    if (!names.length) return emptyState('还没有联系人', '先打开一个角色聊天；从世界书提取更多联系人将在第五段开放。');
+    const wrap = el('div', 'bb-settings');
+    wrap.append(el('p', 'bb-switch-hint', '当前使用角色卡联系人，群聊使用未停用的成员。更多联系人将在第五段开放。'));
+    for (const name of names) {
+        const row = el('div', 'bb-entry-setting');
+        row.append(el('span', 'bb-switch-title', name), el('span', 'bb-switch-hint', '主动程度使用设置页的默认值'));
+        wrap.append(row);
+    }
+    return wrap;
+}
+
+function settingsChoices(title, key, current, choices) {
+    const field = el('fieldset', 'bb-field');
+    field.append(el('legend', 'bb-field-label', title));
+    const seg = el('div', choices.length === 2 ? 'bb-seg bb-seg-two' : 'bb-seg');
+    for (const [value, text] of choices) {
+        const input = el('input'); input.type = 'radio'; input.name = `bb-${key}`; input.id = `bb-${key}-${value}`;
+        input.value = String(value); input.checked = current === value; input.dataset.bbSetting = key;
+        const label = el('label', null, text); label.htmlFor = input.id;
+        seg.append(input, label);
+    }
+    field.append(seg); return field;
 }
 
 function renderSettings() {
@@ -253,7 +276,27 @@ function renderSettings() {
     const voiceToggle = el('input', 'bb-toggle'); voiceToggle.type = 'checkbox';
     voiceToggle.checked = s.voiceEnabled; voiceToggle.dataset.bbSetting = 'voiceEnabled';
     voice.append(voiceText, voiceToggle);
-    wrap.append(themeField, entryField, notice, voice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    const proactive = el('label', 'bb-switch');
+    const proactiveText = el('span', 'bb-switch-text');
+    proactiveText.append(el('span', 'bb-switch-title', '角色主动发消息'),
+        el('span', 'bb-switch-hint', '随主线剧情发来手机消息；关闭后仍记录谁与你同场。'));
+    const proactiveToggle = el('input', 'bb-toggle'); proactiveToggle.type = 'checkbox';
+    proactiveToggle.checked = s.proactiveEnabled; proactiveToggle.dataset.bbSetting = 'proactiveEnabled';
+    proactive.append(proactiveText, proactiveToggle);
+    const level = settingsChoices('默认主动程度', 'proactiveLevel', s.proactiveLevel,
+        [['restrained', '克制'], ['normal', '正常'], ['clingy', '黏人']]);
+    level.append(el('span', 'bb-switch-hint', '克制：确有理由才发；正常：有合适时机就发；黏人：没事也会找你。同场时都不发。'));
+    const cooldown = el('label', 'bb-entry-setting');
+    cooldown.append(el('span', 'bb-switch-title', '冷却楼数'),
+        el('span', 'bb-switch-hint', '两次主动消息之间至少隔几楼，用户消息也计一楼。0 表示不设冷却。'));
+    const cooldownInput = el('input', 'bb-settings-input'); cooldownInput.type = 'number';
+    cooldownInput.inputMode = 'numeric'; cooldownInput.min = '0'; cooldownInput.step = '1';
+    cooldownInput.value = String(s.proactiveCooldown); cooldownInput.dataset.bbSetting = 'proactiveCooldown';
+    cooldown.append(cooldownInput);
+    const depth = settingsChoices('手机规则位置', 'proactiveDepth', s.proactiveDepth,
+        [[0, '靠近最新消息'], [1, '提前一楼']]);
+    depth.append(el('span', 'bb-switch-hint', '默认靠近最新消息。若常用预设不遵守规则，可试试提前一楼。'));
+    wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
@@ -335,6 +378,16 @@ function onChange(event) {
         setSetting('voiceEnabled', input.checked);
     } else if (key === 'thinkTags') {
         setSetting('thinkTags', input.value.split(/[,，\s]+/).map(s => s.trim().toLowerCase()).filter(s => /^[a-z][a-z0-9_-]*$/.test(s)));
+    } else if (key === 'proactiveEnabled') {
+        setSetting(key, input.checked);
+    } else if (key === 'proactiveLevel' && ['restrained', 'normal', 'clingy'].includes(input.value)) {
+        setSetting(key, input.value);
+    } else if (key === 'proactiveDepth' && ['0', '1'].includes(input.value)) {
+        setSetting(key, Number(input.value));
+    } else if (key === 'proactiveCooldown') {
+        const value = Number(input.value);
+        if (input.value.trim() && Number.isSafeInteger(value) && value >= 0) setSetting(key, value);
+        else { input.value = String(getSettings().proactiveCooldown); toastr.info('冷却楼数请填写 0 或正整数'); }
     }
 }
 

@@ -20,9 +20,9 @@ function panelHarness() {
     const body = document.createElement('main'); body.className = 'bb-body'; phone.append(body);
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
-    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'] };
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
-        rootNode: root, icons, fingerprint, VERSION: '0.2.1', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情'], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0 }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
@@ -185,4 +185,26 @@ test('prompt dry runs and quiet background calls cannot latch the generation loc
     assert.deepEqual(h.generationSignals, [true, false]);
     started('quiet', { quietToLoud: true }, false);
     assert.deepEqual(h.generationSignals, [true, false, true]);
+});
+
+test('proactive settings persist button choices and numeric values, reject invalid cooldown, and show current contacts', async () => {
+    const h = panelHarness(); h.scope.openPanel();
+    await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    const toggle = h.root.querySelector('[data-bb-setting="proactiveEnabled"]');
+    assert.equal(toggle.checked, true); toggle.checked = false; h.scope.onChange({ target: toggle });
+    assert.equal(h.settings.proactiveEnabled, false);
+    const choices = h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]'); assert.equal(choices.length, 3);
+    h.scope.onChange({ target: choices.find(n => n.value === 'clingy') }); assert.equal(h.settings.proactiveLevel, 'clingy');
+    const depth = h.root.querySelectorAll('[data-bb-setting="proactiveDepth"]');
+    h.scope.onChange({ target: depth.find(n => n.value === '1') }); assert.equal(h.settings.proactiveDepth, 1);
+    const cooldown = h.root.querySelector('[data-bb-setting="proactiveCooldown"]');
+    cooldown.value = '0'; h.scope.onChange({ target: cooldown }); assert.equal(h.settings.proactiveCooldown, 0);
+    for (const value of ['', '-1', '1.5', '9007199254740992']) {
+        cooldown.value = value; h.scope.onChange({ target: cooldown }); assert.equal(h.settings.proactiveCooldown, 0); assert.equal(cooldown.value, '0');
+    }
+    await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
+    assert.equal(h.root.querySelector('.bb-switch-title').textContent, '剧情');
+    await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    assert.equal(h.root.querySelector('[data-bb-setting="proactiveEnabled"]').checked, false);
+    assert.equal(h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]').find(n => n.value === 'clingy').checked, true);
 });
