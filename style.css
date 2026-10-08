@@ -1,0 +1,453 @@
+/* 青鸟 · Bluebird
+ * 颜色全部是插件自己的，不跟酒馆主题走；选择器都以 #bluebird-panel / #bluebird-bar 开头，压住酒馆全局样式。
+ * 不加载外部字体，用系统字体栈。
+ */
+
+/* ---------- 配色 ---------- */
+
+#bluebird-panel,
+#bluebird-bar {
+    --bb-bg: #EAF0EF;
+    --bb-surface: #FFFFFF;
+    --bb-card: #F3F7F6;
+    --bb-ink: #1C2A2C;
+    --bb-sub: #56676A;
+    --bb-line: #D3DEDD;
+    --bb-accent: #1F6B74;
+    --bb-accent-ink: #FFFFFF;
+    --bb-accent-soft: #D5E7E7;
+    --bb-accent-strong: #1F6B74;
+    --bb-warm: #B8452C;
+    --bb-warm-ink: #FFFFFF;
+    --bb-shadow: 0 16px 48px rgba(16, 36, 40, 0.28);
+    --bb-sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+    --bb-serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", serif;
+    color-scheme: light;
+}
+
+#bluebird-panel[data-bb-theme="night"],
+#bluebird-bar[data-bb-theme="night"] {
+    --bb-bg: #132225;
+    --bb-surface: #1C3135;
+    --bb-card: #18292C;
+    --bb-ink: #E3ECEA;
+    --bb-sub: #9FB3B2;
+    --bb-line: #2A4347;
+    --bb-accent: #5FB1B8;
+    --bb-accent-ink: #0E1C1E;
+    --bb-accent-soft: #22484D;
+    --bb-accent-strong: #8FD0D5;
+    --bb-warm: #C0533A;
+    --bb-warm-ink: #FFFFFF;
+    --bb-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+}
+
+/* ---------- 重置 ---------- */
+
+#bluebird-panel,
+#bluebird-panel *,
+#bluebird-bar,
+#bluebird-bar * {
+    box-sizing: border-box;
+}
+
+#bluebird-panel button,
+#bluebird-bar button {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: normal;
+    text-transform: none;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+#bluebird-panel svg,
+#bluebird-bar svg {
+    display: block;
+    flex: none;
+}
+
+#bluebird-panel :focus-visible,
+#bluebird-bar :focus-visible {
+    outline: 2px solid var(--bb-accent);
+    outline-offset: 2px;
+}
+
+/* ---------- 面板外壳 ---------- */
+
+#bluebird-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    pointer-events: auto;
+    font-family: var(--bb-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--bb-ink);
+    text-align: left;
+}
+
+#bluebird-panel[hidden] {
+    display: none;
+}
+
+#bluebird-panel .bb-phone {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: var(--bb-bg);
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+}
+
+html.bb-open,
+html.bb-open body {
+    overflow: hidden;
+}
+
+/* ---------- 顶部 ---------- */
+
+#bluebird-panel .bb-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 8px 0 20px;
+}
+
+#bluebird-panel .bb-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--bb-accent);
+}
+
+#bluebird-panel .bb-title {
+    margin: 0;
+    font-family: var(--bb-serif);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.14em;
+    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bb-sub);
+}
+
+#bluebird-panel .bb-icon-btn:hover {
+    background: var(--bb-card);
+    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-story {
+    flex: none;
+    margin: 0 20px 12px 58px;
+    font-size: 13px;
+    color: var(--bb-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#bluebird-panel .bb-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* ---------- 底部页签 ---------- */
+
+#bluebird-panel .bb-tabs {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 4px 8px 10px;
+    border-top: 1px solid var(--bb-line);
+    background: var(--bb-bg);
+}
+
+#bluebird-panel .bb-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 54px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: var(--bb-sub);
+}
+
+#bluebird-panel .bb-tab.is-active {
+    color: var(--bb-accent);
+    font-weight: 700;
+}
+
+/* ---------- 空状态 ---------- */
+
+#bluebird-panel .bb-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 100%;
+    padding: 32px 40px 64px;
+    text-align: center;
+}
+
+#bluebird-panel .bb-empty-title {
+    margin: 0;
+    font-family: var(--bb-serif);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-empty-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--bb-sub);
+}
+
+/* ---------- 设置页 ---------- */
+
+#bluebird-panel .bb-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 16px 24px;
+}
+
+#bluebird-panel .bb-field {
+    min-width: 0;
+    margin: 0;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--bb-line);
+    border-radius: 16px;
+    background: var(--bb-surface);
+}
+
+#bluebird-panel .bb-field-label {
+    float: left;
+    width: 100%;
+    margin: 0 0 10px;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-seg {
+    clear: both;
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--bb-line);
+    border-radius: 12px;
+    background: var(--bb-card);
+}
+
+#bluebird-panel .bb-seg input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#bluebird-panel .bb-seg label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    margin: 0;
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--bb-sub);
+    cursor: pointer;
+}
+
+#bluebird-panel .bb-seg input:checked + label {
+    background: var(--bb-accent-soft);
+    color: var(--bb-accent-strong);
+    font-weight: 700;
+}
+
+#bluebird-panel .bb-seg input:focus-visible + label {
+    outline: 2px solid var(--bb-accent);
+    outline-offset: 2px;
+}
+
+#bluebird-panel .bb-switch {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--bb-line);
+    border-radius: 16px;
+    background: var(--bb-surface);
+    cursor: pointer;
+}
+
+#bluebird-panel .bb-switch-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+#bluebird-panel .bb-switch-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--bb-ink);
+}
+
+#bluebird-panel .bb-switch-hint {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--bb-sub);
+}
+
+#bluebird-panel input.bb-toggle {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: none;
+    position: relative;
+    width: 46px;
+    height: 28px;
+    margin: 0;
+    border: 0;
+    border-radius: 14px;
+    background: var(--bb-line);
+    cursor: pointer;
+    transition: background-color 0.16s ease;
+}
+
+#bluebird-panel input.bb-toggle::before {
+    content: none;
+    display: none;
+}
+
+#bluebird-panel input.bb-toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: transform 0.16s ease;
+}
+
+#bluebird-panel input.bb-toggle:checked {
+    background: var(--bb-accent);
+}
+
+#bluebird-panel input.bb-toggle:checked::after {
+    transform: translateX(18px);
+}
+
+#bluebird-panel input.bb-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#bluebird-panel .bb-version {
+    margin: 8px 0 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--bb-sub);
+}
+
+/* ---------- 输入框上方的青鸟按钮 ---------- */
+
+#bluebird-bar {
+    display: flex;
+    flex-basis: 100%;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 6px 2px;
+    font-family: var(--bb-sans);
+}
+
+#bluebird-bar .bb-qr {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--bb-accent);
+    border-radius: 18px;
+    background: var(--bb-accent-soft);
+    color: var(--bb-accent-strong);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+#bluebird-bar .bb-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: var(--bb-warm);
+    color: var(--bb-warm-ink);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+}
+
+#bluebird-bar .bb-badge[hidden] {
+    display: none;
+}
+
+/* ---------- 减少动效 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    #bluebird-panel *,
+    #bluebird-bar * {
+        transition: none !important;
+    }
+}
