@@ -100,6 +100,19 @@ function renderSettings() {
     });
     themeField.append(seg);
 
+    const entryField = el('label', 'bb-entry-setting');
+    entryField.append(el('span', 'bb-switch-title', '入口显示方式'));
+    const entrySelect = document.createElement('select');
+    entrySelect.dataset.bbSetting = 'entryMode';
+    entrySelect.setAttribute('aria-label', '入口显示方式');
+    for (const [value, label] of [['floating', '悬浮球'], ['wand', '收进魔法棒']]) {
+        const option = el('option', null, label);
+        option.value = value;
+        entrySelect.append(option);
+    }
+    entrySelect.value = s.entryMode;
+    entryField.append(entrySelect, el('span', 'bb-switch-hint', '悬浮球可拖动，位置会记住；切换立即生效。'));
+
     // 正文消息提醒
     const notice = el('label', 'bb-switch');
     const text = el('span', 'bb-switch-text');
@@ -115,7 +128,7 @@ function renderSettings() {
     toggle.dataset.bbSetting = 'inlineNotice';
     notice.append(text, toggle);
 
-    wrap.append(themeField, notice, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    wrap.append(themeField, entryField, notice, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
@@ -162,6 +175,8 @@ function onChange(event) {
         applyThemeEverywhere();
     } else if (key === 'inlineNotice') {
         setSetting('inlineNotice', input.checked);
+    } else if (key === 'entryMode' && ['floating', 'wand'].includes(input.value)) {
+        setSetting('entryMode', input.value);
     }
 }
 
@@ -239,7 +254,8 @@ export function closePanel() {
     unlockBackground();
     const target = returnFocus?.isConnected && !returnFocus.disabled
         && !returnFocus.closest('[hidden], [inert]') && returnFocus.getClientRects().length > 0
-        ? returnFocus : document.querySelector('#bluebird-bar button') || document.getElementById('send_textarea');
+        ? returnFocus : document.querySelector('#bluebird-entry[data-bb-entry-mode="floating"] button')
+            || document.getElementById('extensionsMenuButton') || document.getElementById('send_textarea');
     target?.focus({ preventScroll: true });
     returnFocus = null;
 }

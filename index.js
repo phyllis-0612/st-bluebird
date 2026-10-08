@@ -4,7 +4,7 @@
 
 import { ctx, getSettings, watchSystemTheme } from './src/settings.js';
 import { refreshPanel } from './src/panel.js';
-import { mountEntry, mountSettingsBlock } from './src/entry.js';
+import { mountEntry, mountSettingsBlock, entryIsMounted } from './src/entry.js';
 
 let mountObserver = null;
 
@@ -12,7 +12,7 @@ function mountUI() {
     mountSettingsBlock();
     mountEntry();
     const settingsReady = document.getElementById('bluebird-settings');
-    const entryReady = !getSettings().enabled || document.getElementById('bluebird-bar');
+    const entryReady = entryIsMounted();
     if (settingsReady && entryReady) {
         mountObserver?.disconnect();
         mountObserver = null;
@@ -38,6 +38,7 @@ function ensureUI() {
 
 function init() {
     getSettings();          // 补齐默认设置
+    document.addEventListener('bluebird:entry-changed', ensureUI);
     ensureUI();             // 扩展设置块和输入框入口，必要时补挂
     watchSystemTheme();     // 「跟随系统」时跟着系统换深浅色
 

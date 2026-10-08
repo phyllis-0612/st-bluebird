@@ -1,57 +1,179 @@
-// 青鸟 · 入口
-// 1. 输入框上方的「青鸟」按钮：插件自己加，不依赖快速回复扩展；未读数挂在按钮上当角标。
-// 2. 扩展抽屉里的设置块：启用开关、打开青鸟。
+// 青鸟 · 入口：悬浮球 / 魔法棒，互斥显示，不占用输入栏。
 
 import { icons } from './icons.js';
 import { getSettings, setSetting, applyThemeEverywhere } from './settings.js';
 import { togglePanel, openPanel, closePanel } from './panel.js';
 
-let bar = null;
+let entry = null;
+let cleanupEntry = null;
+let unread = 0;
+
+function syncSettingsControls() {
+    const s = getSettings();
+    const mode = document.getElementById('bb-entry-mode');
+    const enabled = document.getElementById('bb-enabled');
+    if (mode) mode.value = s.entryMode;
+    if (enabled) enabled.checked = s.enabled;
+}
+
+function floatBounds(button) {
+    const viewport = window.visualViewport;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
+    const rect = button.getBoundingClientRect();
+    const css = getComputedStyle(button);
+    const safe = (edge) => Math.max(0, parseFloat(css.getPropertyValue(`--bb-safe-${edge}`)) || 0);
+    const minX = 12 + safe('left');
+    const minY = 12 + safe('top');
+    return {
+        minX, minY,
+        maxX: Math.max(minX, width - rect.width - 12 - safe('right')),
+        maxY: Math.max(minY, height - rect.height - 12 - safe('bottom')),
+    };
+}
+
+function placeFloat(button, x, y, bounds = floatBounds(button)) {
+    const left = Math.min(bounds.maxX, Math.max(bounds.minX, x));
+    const top = Math.min(bounds.maxY, Math.max(bounds.minY, y));
+    button.style.left = `${left}px`;
+    button.style.top = `${top}px`;
+    button.style.right = 'auto';
+    button.style.bottom = 'auto';
+    return { left, top, bounds };
+}
+
+function wireFloatingButton(button) {
+    let drag = null;
+    let suppressClick = false;
+    let clickResetTimer = null;
+    const restorePosition = () => {
+        if (!button.isConnected || drag) return;
+        const b = floatBounds(button);
+        const p = getSettings().floatPosition;
+        placeFloat(button,
+            p ? b.minX + p.x * (b.maxX - b.minX) : b.maxX,
+            p ? b.minY + p.y * (b.maxY - b.minY) : b.maxY - 128, b);
+    };
+    button.addEventListener('pointerdown', (event) => {
+        if (!event.isPrimary || event.button !== 0) return;
+        clearTimeout(clickResetTimer);
+        suppressClick = false;
+        const rect = button.getBoundingClientRect();
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY,
+            left: rect.left, top: rect.top, moved: false };
+        button.setPointerCapture(event.pointerId);
+    });
+    button.addEventListener('pointermove', (event) => {
+        if (!drag || event.pointerId !== drag.id) return;
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 8) return;
+        drag.moved = true;
+        button.classList.add('is-dragging');
+        event.preventDefault();
+        placeFloat(button, drag.left + dx, drag.top + dy);
+    });
+    const finishDrag = (event) => {
+        if (!drag || event.pointerId !== drag.id) return;
+        const moved = drag.moved;
+        drag = null;
+        button.classList.remove('is-dragging');
+        if (button.hasPointerCapture(event.pointerId)) button.releasePointerCapture(event.pointerId);
+        if (moved && event.type === 'pointerup') {
+            const rect = button.getBoundingClientRect();
+            const { left, top, bounds: b } = placeFloat(button, rect.left, rect.top);
+            setSetting('floatPosition', {
+                x: (left - b.minX) / (b.maxX - b.minX || 1),
+                y: (top - b.minY) / (b.maxY - b.minY || 1),
+            });
+            suppressClick = true;
+            clickResetTimer = setTimeout(() => { suppressClick = false; }, 400);
+        } else if (event.type !== 'pointerup') restorePosition();
+    };
+    button.addEventListener('pointerup', finishDrag);
+    button.addEventListener('pointercancel', finishDrag);
+    button.addEventListener('lostpointercapture', finishDrag);
+    button.addEventListener('click', (event) => {
+        if (suppressClick) {
+            suppressClick = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        togglePanel();
+    });
+    window.addEventListener('resize', restorePosition);
+    window.visualViewport?.addEventListener('resize', restorePosition);
+    const frame = requestAnimationFrame(restorePosition);
+    return () => {
+        clearTimeout(clickResetTimer);
+        cancelAnimationFrame(frame);
+        window.removeEventListener('resize', restorePosition);
+        window.visualViewport?.removeEventListener('resize', restorePosition);
+    };
+}
+
+export function entryIsMounted() {
+    const s = getSettings();
+    return !s.enabled || !!(entry?.isConnected && entry.dataset.bbEntryMode === s.entryMode);
+}
 
 export function mountEntry() {
-    if (bar?.isConnected || !getSettings().enabled) return;
-    const form = document.getElementById('send_form');
-    if (!form) {
-        console.warn('[青鸟] 没找到 #send_form，青鸟按钮没有挂上');
+    syncSettingsControls();
+    const s = getSettings();
+    if (!s.enabled) {
+        unmountEntry();
+        closePanel();
         return;
     }
-    bar = document.createElement('div');
-    bar.id = 'bluebird-bar';
-    bar.dataset.bbThemed = '';
-    bar.innerHTML = `
-        <button type="button" class="bb-qr" aria-label="打开青鸟">
-            ${icons.bird(18)}<span>青鸟</span><span class="bb-badge" aria-hidden="true" hidden></span>
+    if (entryIsMounted()) return;
+    unmountEntry();
+    const host = s.entryMode === 'wand' ? document.getElementById('extensionsMenu') : document.body;
+    if (!host) return; // 魔法棒菜单尚未挂载时，由初始化观察器补挂。
+    entry = document.createElement('div');
+    entry.id = 'bluebird-entry';
+    entry.dataset.bbThemed = '';
+    entry.dataset.bbEntryMode = s.entryMode;
+    if (s.entryMode === 'wand') {
+        entry.className = 'extension_container';
+        entry.innerHTML = `<button type="button" class="bb-entry-button bb-wand list-group-item flex-container flexGap5" aria-label="打开青鸟" aria-haspopup="dialog">
+            ${icons.bird(22)}<span>青鸟</span><span class="bb-badge" aria-hidden="true" hidden></span>
         </button>`;
-    bar.querySelector('.bb-qr').addEventListener('click', togglePanel);
-    form.prepend(bar);
+    } else {
+        entry.innerHTML = `<button type="button" class="bb-entry-button bb-float" aria-label="打开青鸟" aria-haspopup="dialog" title="青鸟（可拖动）">
+            ${icons.bird(27)}<span class="bb-badge" aria-hidden="true" hidden></span>
+        </button>`;
+    }
+    host.appendChild(entry);
+    const button = entry.querySelector('.bb-entry-button');
+    if (s.entryMode === 'floating') cleanupEntry = wireFloatingButton(button);
+    else button.addEventListener('click', openPanel); // 由酒馆的冒泡处理收起魔法棒菜单。
+    setUnread(unread);
     applyThemeEverywhere();
 }
 
 export function unmountEntry() {
-    bar?.remove();
-    bar = null;
+    cleanupEntry?.();
+    cleanupEntry = null;
+    entry?.remove();
+    entry = null;
 }
 
-/** 设置未读数，0 时隐藏角标。第三段开始真正调用。 */
+/** 切换入口、停用再启用时保留未读数。 */
 export function setUnread(count) {
-    if (!bar) return;
-    const btn = bar.querySelector('.bb-qr');
-    const badge = bar.querySelector('.bb-badge');
-    if (count > 0) {
-        badge.textContent = count > 99 ? '99+' : String(count);
-        badge.hidden = false;
-        btn.setAttribute('aria-label', `打开青鸟，${count} 条未读`);
-    } else {
-        badge.hidden = true;
-        btn.setAttribute('aria-label', '打开青鸟');
-    }
+    unread = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+    if (!entry) return;
+    const button = entry.querySelector('.bb-entry-button');
+    const badge = entry.querySelector('.bb-badge');
+    badge.hidden = unread === 0;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    button.setAttribute('aria-label', unread ? `打开青鸟，${unread} 条未读` : '打开青鸟');
 }
 
 export function mountSettingsBlock() {
     if (document.getElementById('bluebird-settings')) return;
     const host = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (!host) return;
-
     const box = document.createElement('div');
     box.id = 'bluebird-settings';
     box.innerHTML = `
@@ -62,27 +184,23 @@ export function mountSettingsBlock() {
             </div>
             <div class="inline-drawer-content">
                 <label class="checkbox_label" for="bb-enabled">
-                    <input type="checkbox" id="bb-enabled">
-                    <span>启用青鸟</span>
+                    <input type="checkbox" id="bb-enabled"><span>启用青鸟</span>
                 </label>
-                <div id="bb-open" class="menu_button">打开青鸟</div>
-                <small>其余设置在青鸟面板的「设置」页里。</small>
+                <label for="bb-entry-mode">入口显示方式</label>
+                <select id="bb-entry-mode" class="text_pole">
+                    <option value="floating">悬浮球</option>
+                    <option value="wand">收进魔法棒</option>
+                </select>
+                <div id="bb-open" class="menu_button" role="button" tabindex="0">打开青鸟</div>
+                <small>悬浮球可拖动，位置会记住；入口切换立即生效。</small>
             </div>
         </div>`;
-    host.append(box);
-
+    host.appendChild(box);
+    syncSettingsControls();
     const enabled = box.querySelector('#bb-enabled');
-    enabled.checked = getSettings().enabled;
-    enabled.addEventListener('change', () => {
-        setSetting('enabled', enabled.checked);
-        if (enabled.checked) {
-            mountEntry();
-        } else {
-            unmountEntry();
-            closePanel();
-        }
-    });
-
+    enabled.addEventListener('change', () => setSetting('enabled', enabled.checked));
+    const mode = box.querySelector('#bb-entry-mode');
+    mode.addEventListener('change', () => setSetting('entryMode', mode.value));
     box.querySelector('#bb-open').addEventListener('click', () => {
         if (!getSettings().enabled) {
             toastr.info('先勾上「启用青鸟」');

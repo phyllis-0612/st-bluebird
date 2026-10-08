@@ -1,12 +1,12 @@
 /* 青鸟 · Bluebird
- * 颜色全部是插件自己的，不跟酒馆主题走；选择器都以 #bluebird-panel / #bluebird-bar 开头，压住酒馆全局样式。
+ * 颜色全部是插件自己的，不跟酒馆主题走；选择器都以 #bluebird-panel / #bluebird-entry 开头，压住酒馆全局样式。
  * 不加载外部字体，用系统字体栈。
  */
 
 /* ---------- 配色 ---------- */
 
 #bluebird-panel,
-#bluebird-bar {
+#bluebird-entry {
     --bb-bg: #EAF0EF;
     --bb-surface: #FFFFFF;
     --bb-card: #F3F7F6;
@@ -26,7 +26,7 @@
 }
 
 #bluebird-panel[data-bb-theme="night"],
-#bluebird-bar[data-bb-theme="night"] {
+#bluebird-entry[data-bb-theme="night"] {
     --bb-bg: #132225;
     --bb-surface: #1C3135;
     --bb-card: #18292C;
@@ -47,13 +47,13 @@
 
 #bluebird-panel,
 #bluebird-panel *,
-#bluebird-bar,
-#bluebird-bar * {
+#bluebird-entry,
+#bluebird-entry * {
     box-sizing: border-box;
 }
 
 #bluebird-panel button,
-#bluebird-bar button {
+#bluebird-entry button {
     margin: 0;
     padding: 0;
     border: 0;
@@ -67,13 +67,13 @@
 }
 
 #bluebird-panel svg,
-#bluebird-bar svg {
+#bluebird-entry svg {
     display: block;
     flex: none;
 }
 
 #bluebird-panel :focus-visible,
-#bluebird-bar :focus-visible {
+#bluebird-entry :focus-visible {
     outline: 2px solid var(--bb-accent);
     outline-offset: 2px;
 }
@@ -395,38 +395,55 @@ html.bb-open body {
     color: var(--bb-sub);
 }
 
-/* ---------- 输入框上方的青鸟按钮 ---------- */
+/* ---------- 悬浮球与魔法棒入口 ---------- */
 
-#bluebird-bar {
+#bluebird-entry .bb-float {
+    --bb-safe-top: env(safe-area-inset-top, 0px);
+    --bb-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --bb-safe-left: env(safe-area-inset-left, 0px);
+    --bb-safe-right: env(safe-area-inset-right, 0px);
+    position: fixed;
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+    z-index: 3000;
     display: flex;
-    flex-basis: 100%;
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 6px 6px 2px;
-    font-family: var(--bb-sans);
-}
-
-#bluebird-bar .bb-qr {
-    position: relative;
-    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    min-height: 36px;
-    padding: 0 14px;
-    border: 1px solid var(--bb-accent);
-    border-radius: 18px;
-    background: var(--bb-accent-soft);
-    color: var(--bb-accent-strong);
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border: 1px solid var(--bb-line);
+    border-radius: 50%;
+    background: var(--bb-surface);
+    color: var(--bb-accent);
+    box-shadow: 0 4px 18px rgba(16, 36, 40, 0.2);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    cursor: grab;
 }
 
-#bluebird-bar .bb-badge {
+#bluebird-entry .bb-float.is-dragging {
+    cursor: grabbing;
+}
+
+#bluebird-entry .bb-wand {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 8px;
+    color: inherit;
+    text-align: left;
+}
+
+#bluebird-entry .bb-badge {
     position: absolute;
-    top: -7px;
-    right: -7px;
+    top: -3px;
+    right: -3px;
     min-width: 20px;
     height: 20px;
     padding: 0 5px;
@@ -437,17 +454,45 @@ html.bb-open body {
     font-weight: 700;
     line-height: 20px;
     text-align: center;
+    pointer-events: none;
 }
 
-#bluebird-bar .bb-badge[hidden] {
+#bluebird-entry .bb-wand .bb-badge {
+    position: static;
+    margin-left: auto;
+}
+
+#bluebird-entry .bb-badge[hidden] {
     display: none;
+}
+
+#bluebird-panel .bb-entry-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--bb-line);
+    border-radius: 16px;
+    background: var(--bb-surface);
+}
+
+#bluebird-panel .bb-entry-setting select {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--bb-line);
+    border-radius: 10px;
+    background: var(--bb-card);
+    color: var(--bb-ink);
+    font: inherit;
 }
 
 /* ---------- 减少动效 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
     #bluebird-panel *,
-    #bluebird-bar * {
+    #bluebird-entry * {
         transition: none !important;
     }
 }
