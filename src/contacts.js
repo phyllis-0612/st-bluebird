@@ -1,8 +1,8 @@
 // 第五段：联系人目录只存来源引用，世界书正文始终按需读取。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.6.5';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.6.6';
 import { world_info } from '../../../../world-info.js';
-import { storyContacts } from './messages.js?v=0.6.5';
-import { requestBluebirdRaw } from './api.js?v=0.6.5';
+import { storyContacts } from './messages.js?v=0.6.6';
+import { requestBluebirdRaw } from './api.js?v=0.6.6';
 
 const CONTACT_LEVELS = ['restrained', 'normal', 'clingy'];
 const VOICE_PROVIDERS = ['minimax', 'elevenlabs'];
@@ -67,13 +67,44 @@ export async function readContactSource(context, contact) {
     return `${entry.comment || contact.name}\n${entry.content || ''}`;
 }
 
-export function parseCandidates(raw, sources) {
-    const text = String(raw || '').replace(/^```(?:json)?\s*|\s*```$/gi, '').trim();
+export function parseCandidates(raw, sources, thinkTags = []) {
+    let text = String(raw || '');
+    for (const tag of [...thinkTags, 'think', 'thinking', 'analysis', 'reasoning']) {
+        if (!/^[\p{L}][\p{L}\p{N}_-]*$/u.test(tag)) continue;
+        const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`<${escaped}(?=[\\s>])[^>]*>[\\s\\S]*?<\\/${escaped}\\s*>`, 'giu'), '');
+    }
+    text = text.trim();
+    const asList = value => Array.isArray(value) ? value : value?.contacts;
     let list;
-    try { const value = JSON.parse(text); list = Array.isArray(value) ? value : value.contacts; }
-    catch { throw new Error('提取结果不是有效 JSON，请重试'); }
-    if (!Array.isArray(list)) throw new Error('提取结果缺少联系人数组，请重试');
+    // 酒馆模型可能附带说明、Markdown 代码围栏或思考块；只取完整的 JSON。
+    const options = [text, ...[...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map(m => m[1].trim())];
+    for (const option of options) {
+        try { list = asList(JSON.parse(option)); if (Array.isArray(list)) break; } catch { /* 继续寻找完整 JSON */ }
+    }
+    if (!Array.isArray(list)) {
+        // 有些模型在 JSON 前后补一句话；扫描配对括号，不截取字符串中的括号。
+        for (let start = 0; start < text.length && !Array.isArray(list); start++) {
+            if (text[start] !== '[' && text[start] !== '{') continue;
+            const stack = []; let quoted = false, escaped = false;
+            for (let i = start; i < text.length; i++) {
+                const char = text[i];
+                if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue; }
+                if (char === '"') { quoted = true; continue; }
+                if (char === '[' || char === '{') stack.push(char);
+                else if (char === ']' || char === '}') {
+                    if (stack.pop() !== (char === ']' ? '[' : '{')) break;
+                    if (!stack.length) {
+                        try { list = asList(JSON.parse(text.slice(start, i + 1))); } catch { /* 下一个候选 */ }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (!Array.isArray(list)) throw new Error('提取结果不是有效 JSON，请重试');
     return list.flatMap(item => {
+        if (!item || typeof item !== 'object') return [];
         const source = sources.find(s => s.key === String(item.source));
         const name = typeof item.name === 'string' ? item.name.trim() : '';
         if (!source || !name || name.length > 80 || /[|\r\n<>]/.test(name)) return [];
@@ -108,8 +139,17 @@ export async function extractContacts(context = ctx(), settings = getSettings(),
     const flush = async () => {
         if (!batch.length) return;
         const request = { systemPrompt: '从角色卡和世界书片段中识别可私聊的人物。地名、组织、物品、抽象概念不是人物。只返回 JSON 数组，每项 {"name":"人物原名","source":"片段 key","person":true,"level":"restrained|normal|clingy"}。不确定是不是人物就写 person:false。一个片段可有多个人；禁止编造不存在的人。',
-            prompt: batch.map(s => JSON.stringify({ source: s.key, title: s.label, name: s.name, content: s.content })).join('\n'), trimNames: false, responseLength: 2048, temperature: 0.2 };
-        candidates.push(...parseCandidates(await generate(request), batch));
+            prompt: batch.map(s => JSON.stringify({ source: s.key, title: s.label, name: s.name, content: s.content })).join('\n'), trimNames: false, responseLength: 4096, temperature: 0.2 };
+        try { candidates.push(...parseCandidates(await generate(request), batch, settings.thinkTags)); }
+        catch (error) {
+            if (!/提取结果(不是有效 JSON|缺少联系人数组)/.test(error.message)) throw error;
+            const retry = { ...request, systemPrompt: `${request.systemPrompt}\n上次输出无法解析。只输出一个完整的 JSON 数组，不能带思考过程、说明、Markdown 或代码围栏。`, responseLength: 8192 };
+            try { candidates.push(...parseCandidates(await generate(retry), batch, settings.thinkTags)); }
+            catch (second) {
+                if (!/提取结果(不是有效 JSON|缺少联系人数组)/.test(second.message)) throw second;
+                throw new Error('模型两次未返回完整的 NPC JSON。请换一个遵循格式的模型，或缩短绑定世界书的条目后再试');
+            }
+        }
         batch = []; length = 0;
     };
     for (const source of sources) {

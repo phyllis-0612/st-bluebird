@@ -2,18 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.5';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.5';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.5';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.5';
-import { scrollToFloor } from './chat-integration.js?v=0.6.5';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.5';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.5';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.5';
-import { getStoryContacts } from './proactive.js?v=0.6.5';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.5';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.5';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.5';
+import { icons } from './icons.js?v=0.6.6';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.6';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.6';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.6';
+import { scrollToFloor } from './chat-integration.js?v=0.6.6';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.6';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.6';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.6';
+import { getStoryContacts } from './proactive.js?v=0.6.6';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.6';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.6';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.6';
 
 let root = null;
 let page = 'list';

@@ -70,3 +70,27 @@ test('bad source IDs cannot be invented by extractor; missing referenced entry f
     assert.equal(h.scope.parseCandidates('[{"name":"陌生人","source":"world:fake:1","person":true}]', []).length, 0);
     await assert.rejects(h.scope.readContactSource(h.context, { name: '阿澜', source: { type: 'world', book: '副书', uid: 999 } }), /重新提取/);
 });
+
+test('NPC extractor accepts fenced JSON, thought tags and short model prefaces', () => {
+    const h = harness();
+    const sources = [{ key: 'world:副书:7', ref: { type: 'world', book: '副书', uid: 7 }, label: '阿澜' }];
+    const payload = '[{"name":"阿澜","source":"world:副书:7","person":true,"level":"normal"}]';
+    for (const raw of [`\`\`\`json\n${payload}\n\`\`\``, `<灵魂疏理>先分析。</灵魂疏理>\n${payload}`, `提取如下：\n${payload}\n完成。`]) {
+        const parsed = h.scope.parseCandidates(raw, sources, ['灵魂疏理']);
+        assert.equal(parsed.length, 1);
+        assert.equal(parsed[0].name, '阿澜');
+    }
+});
+
+test('NPC extractor retries malformed or truncated JSON once and keeps source validation', async () => {
+    const h = harness(); let calls = 0;
+    const result = await h.scope.extractContacts(h.context, h.settings, async request => {
+        calls++;
+        if (calls === 1) return '[{"name":"阿澜","source":"world:副书:7"';
+        assert.equal(request.responseLength, 8192);
+        return '结果：[{"name":"阿澜","source":"world:副书:7","person":true}]';
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.find(c => c.name === '阿澜').selected, true);
+    await assert.rejects(h.scope.extractContacts(h.context, h.settings, async () => '不是 JSON'), /两次未返回完整/);
+});
