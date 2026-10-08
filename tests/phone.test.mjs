@@ -51,14 +51,16 @@ test('sending all five types persists, reloads and does not create story floors;
 
 test('multiple sends make no API calls until one explicit reply request sees the whole conversation', async () => {
     const h = harness(); let requests = 0, request;
-    h.c.generateRaw = async r => { requests++; request = r; return '陆|text|两条都看到了\n陆|voice|早点休息'; };
+    h.c.generateRaw = async r => { requests++; request = r; return '陆|text|两条都看到了\n陆|voice|早点休息|whisper'; };
     await h.scope.sendPhoneMessage('陆', 'text', '第一条'); await h.scope.sendPhoneMessage('陆', 'text', '第二条');
     assert.equal(requests, 0); assert.equal(h.timers.size, 0);
     await h.scope.requestPhoneReply('陆');
     assert.equal(requests, 1); assert.match(request.prompt, /温柔的陆/); assert.match(request.prompt, /认识鱼仔/);
     assert.match(request.prompt, /她出门了/); assert.doesNotMatch(request.prompt, /不能进记忆/);
     assert.match(request.prompt, /第一条/); assert.match(request.prompt, /第二条/); assert.equal(request.trimNames, false);
+    assert.match(request.systemPrompt, /语气词/);
     assert.equal(h.pending().length, 4); assert.equal(h.scope.getPhoneStatus('陆').phase, 'idle');
+    assert.deepEqual(Array.from(h.pending().at(-1).fields), ['陆', 'voice', '早点休息', 'whisper']);
 });
 
 test('switching chat or editing during an in-flight reply cannot write stale results', async () => {

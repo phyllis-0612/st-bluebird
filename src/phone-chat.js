@@ -1,10 +1,10 @@
 // 第四段：后台手机回复和主线暂存快照，所有异步任务绑定原聊天。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.1';
-import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.6.1';
-import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.6.1';
-import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.6.1';
-import { selectedContacts } from './contacts.js?v=0.6.1';
-import { requestBluebirdRaw } from './api.js?v=0.6.1';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.2';
+import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.6.2';
+import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.6.2';
+import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.6.2';
+import { selectedContacts } from './contacts.js?v=0.6.2';
+import { requestBluebirdRaw } from './api.js?v=0.6.2';
 
 export const PENDING_PROMPT_KEY = 'bluebird-pending';
 const jobs = new Map(), phoneStatusListeners = new Set();

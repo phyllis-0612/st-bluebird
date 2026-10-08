@@ -1,7 +1,7 @@
 // 结绳只读适配。正式公开接口随后加入；这里不读取备份，也不写回结绳。
-import { ctx, getSettings } from './settings.js?v=0.6.1';
-import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.6.1';
-import { readContactSource } from './contacts.js?v=0.6.1';
+import { ctx, getSettings } from './settings.js?v=0.6.2';
+import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.6.2';
+import { readContactSource } from './contacts.js?v=0.6.2';
 
 export function storyBody(text, settings) {
     const masked = hidePhoneTags(maskExcluded(String(text || ''), [...settings.thinkTags, ...settings.statusTags]));
@@ -99,6 +99,6 @@ export async function buildPhoneRequest(context, contact, conversation, settings
         `现在以${contact.name}的身份回复用户最新的手机消息。`,
     ].join('\n\n');
     const sender = serializeFields([contact.name]);
-    const systemPrompt = `你正在扮演联系人，通过手机聊天。沿用角色人设、关系和记忆，只按角色知道的事回复，不把全局剧情当作角色亲眼所见。短、口语，不叙述动作，不替用户发言。只输出消息行，每条独占一行。格式：\n${sender}|text|内容\n${sender}|voice|语音文字\n${sender}|image|画面描述\n${sender}|transfer|正数金额|备注\n${sender}|location|地点|备注\n只选适合的类型，不照抄示例，不输出思考、代码块或解释。内容中的竖线、换行、反斜杠用 \\|、\\n、\\\\ 转义。不编造已经收款的状态。`;
+    const systemPrompt = `你正在扮演联系人，通过手机聊天。沿用角色人设、关系和记忆，只按角色知道的事回复，不把全局剧情当作角色亲眼所见。短、口语，不叙述动作，不替用户发言。只输出消息行，每条独占一行。格式：\n${sender}|text|内容\n${sender}|voice|语音文字|calm\n${sender}|image|画面描述\n${sender}|transfer|正数金额|备注\n${sender}|location|地点|备注\n只选适合的类型，不照抄示例。语音末尾可根据角色已知的剧情和当前聊天选一个语气词：calm、happy、sad、angry、fearful、surprised、whisper；拿不准就省略，不把语气词写进语音文字。不输出思考、代码块或解释。内容中的竖线、换行、反斜杠用 \\|、\\n、\\\\ 转义。不编造已经收款的状态。`;
     return { prompt, systemPrompt, trimNames: false, responseLength: settings.phoneReplyTokens };
 }

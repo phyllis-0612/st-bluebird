@@ -79,6 +79,20 @@ test('ElevenLabs uses account voice list and audio response, MiniMax emotion is 
     assert.equal(mini.body.voice_setting.emotion, 'happy');
 });
 
+test('generated voice tone directs compatible TTS without changing the visible transcript', () => {
+    const h = harness(), config = { provider: 'elevenlabs', voiceId: 'v1' };
+    const utterance = { content: '你回来啦。', note: 'whisper' };
+    const eleven = h.scope.synthesisRequest(utterance, config, h.settings.ttsElevenLabs);
+    assert.equal(eleven.body.text, '[whispers] 你回来啦。');
+    assert.equal(utterance.content, '你回来啦。');
+    assert.equal(h.scope.synthesisRequest({ ...utterance, note: 'calm' }, config, h.settings.ttsElevenLabs).body.text, utterance.content);
+    assert.equal(h.scope.synthesisRequest({ ...utterance, note: '[laughs] fake' }, config, h.settings.ttsElevenLabs).body.text, utterance.content);
+    assert.equal(h.scope.synthesisRequest(utterance, config, { ...h.settings.ttsElevenLabs, model: 'eleven_multilingual_v2' }).body.text, utterance.content);
+    const mini = { provider: 'minimax', voiceId: 'voice' };
+    assert.equal(h.scope.synthesisRequest(utterance, mini, h.settings.ttsMiniMax).body.voice_setting.emotion, undefined);
+    assert.equal(h.scope.synthesisRequest(utterance, mini, { ...h.settings.ttsMiniMax, model: 'speech-2.6-hd' }).body.voice_setting.emotion, 'whisper');
+});
+
 test('playback unlocks during the click and stops the previous clip', async () => {
     const h = harness(), actions = [];
     class FakeAudioContext {

@@ -46,6 +46,7 @@ test('rules use actual persona and escaped contact names; all five sample messag
     const h = harness(); h.c.characters[0].name = '陆|知行'; const p = h.prompt();
     assert.match(p, /鱼仔/); assert.match(p, /青鸟只属于用户/); assert.match(p, /角色与朋友、其他 NPC 之间可以互相发短信/); assert.doesNotMatch(p, /\{\{user\}\}/); assert.match(p, /同场的人不向用户手机发/);
     const sample = parseFloor(p).messages; assert.equal(sample.length, 5); assert.ok(sample.every(m => m.sender === '陆|知行'));
+    assert.equal(sample.find(m => m.type === 'voice').note, 'calm'); assert.match(p, /根据说话人当时已知的情境/);
     assert.equal(h.c.chat.length, 0);
 });
 test('cooldown counts intervening user and hidden floors at exact boundary', () => {

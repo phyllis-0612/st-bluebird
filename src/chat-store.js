@@ -1,7 +1,7 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.6.1';
-import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.1';
-import { selectedContacts } from './contacts.js?v=0.6.1';
+import { ctx, getSettings } from './settings.js?v=0.6.2';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.2';
+import { selectedContacts } from './contacts.js?v=0.6.2';
 
 let state = buildState([]);
 let owner = null;

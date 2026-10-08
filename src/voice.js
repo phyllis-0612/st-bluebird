@@ -1,7 +1,7 @@
 // 第六段：按点击合成单条语音；凭据从梨园实时读取，不复制进青鸟。
-import { ctx, getSettings } from './settings.js?v=0.6.1';
-import { selectedContacts } from './contacts.js?v=0.6.1';
-import { apiUrl } from './api.js?v=0.6.1';
+import { ctx, getSettings } from './settings.js?v=0.6.2';
+import { selectedContacts } from './contacts.js?v=0.6.2';
+import { apiUrl } from './api.js?v=0.6.2';
 
 const catalogs = { minimax: [], elevenlabs: [] };
 let audioContext = null, currentSource = null, playSerial = 0, currentId = '';
@@ -107,22 +107,24 @@ function hexAudio(value) {
 }
 export function synthesisRequest(message, config, source) {
     const speed = Math.max(0.5, Math.min(2, Number(source.globalSpeed || 1)));
+    const tone = String(message.note || '').trim().toLowerCase();
     if (config.provider === 'elevenlabs') {
         if (!/^[\w-]+$/.test(config.voiceId)) throw new Error('ElevenLabs Voice ID 无效');
         const model = source.model || 'eleven_v4';
         const settings = { stability: Number(source.stability ?? 0.5), similarity_boost: Number(source.similarityBoost ?? 0.75) };
         if (!['eleven_v4', 'eleven_v4_turbo'].includes(model)) settings.speed = Math.max(0.7, Math.min(1.2, speed));
+        const tags = { happy: 'happy', sad: 'sad', angry: 'angry', fearful: 'fearful', surprised: 'surprised', whisper: 'whispers' };
+        const tag = ['eleven_v3', 'eleven_v4', 'eleven_v4_turbo'].includes(model) ? tags[tone] : null;
         const url = new URL(apiUrl(source.baseUrl || 'https://api.elevenlabs.io', `/v1/text-to-speech/${encodeURIComponent(config.voiceId)}`));
         url.searchParams.set('output_format', source.outputFormat || 'mp3_44100_128');
-        return { url: url.href, body: { text: message.content, model_id: model, voice_settings: settings }, headers: { 'Content-Type': 'application/json', 'xi-api-key': source.apiKey, Accept: 'audio/mpeg' } };
+        return { url: url.href, body: { text: tag ? `[${tag}] ${message.content}` : message.content, model_id: model, voice_settings: settings }, headers: { 'Content-Type': 'application/json', 'xi-api-key': source.apiKey, Accept: 'audio/mpeg' } };
     }
-    const emotion = String(message.note || '').trim().toLowerCase();
     const model = source.model || 'speech-2.8-hd';
     const voice = { voice_id: config.voiceId, speed, vol: 1, pitch: 0 };
     const emotions = ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'];
     if (/^speech-2\.[68]-/.test(model)) emotions.push('fluent');
     if (/^speech-2\.6-/.test(model)) emotions.push('whisper');
-    if (emotions.includes(emotion)) voice.emotion = emotion;
+    if (emotions.includes(tone)) voice.emotion = tone;
     const url = new URL(apiUrl(source.baseUrl || 'https://api.minimaxi.com', '/v1/t2a_v2'));
     if (source.groupId) url.searchParams.set('GroupId', source.groupId);
     return { url: url.href, body: { model, text: message.content, stream: false, output_format: 'hex', language_boost: 'auto', voice_setting: voice,
