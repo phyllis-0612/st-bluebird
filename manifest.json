@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "克克姐&奶盖&鱼仔",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "homePage": "https://github.com/phyllis-0612/st-bluebird",
   "auto_update": true,
   "generate_interceptor": "bluebirdGenerationInterceptor"

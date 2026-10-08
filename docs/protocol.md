@@ -1,4 +1,4 @@
-# 青鸟消息协议 · v0.6.3
+# 青鸟消息协议 · v0.6.4
 
 消息原文是唯一数据来源，存放在酒馆楼层的 `mes`，跟随当前 swipe。第二段只读取、展示与改写转账状态，不调用生成 API。
 
@@ -102,3 +102,5 @@
 青鸟 API 预设是当前扩展设置，默认跟随酒馆；自定义预设按 OpenAI 兼容 `/v1/chat/completions` 发请求，用于手机回复和 NPC 提取，不注入主线。MiniMax 和 ElevenLabs Key 每次使用先读 `extensionSettings.playhouse.tts`，没填再读青鸟自己的语音设置。通讯录只保存音色 ID，不复制梨园音色库或 Key。音频只在用户点击时生成，IndexedDB 按合成参数散列缓存，超出容量删最久未用；不支持 IndexedDB 时播放仍正常。
 
 v0.6.3 起 `extensionSettings.bluebird.voiceProvider` 决定青鸟所用的语音服务，初次设置默认取梨园当前服务，之后可独立切换。通讯录的 `voice` 为按服务分别保存的 `{ minimax?: voice_id, elevenlabs?: voice_id }`；读取旧版 `{ provider, voiceId }` 时转换为对应服务，两个服务互不覆盖。音色选项实时读取梨园 `voiceBank` 或 `elevenLabsVoices.voiceBank`，无梨园条目时仍可手填 voice_id；对应 Key 继续按原优先级读取。
+
+v0.6.4 起选择音色的变更不重建通讯录 DOM，避免移动端原生下拉框滚动时被关闭。「重新读取梨园音色」只重新读取同页 `extensionSettings.playhouse` 中已经保存的音色库，刷新列表并提示数量；它不调用外部音色 API。若梨园自己尚未导入新音色，先去梨园导入。

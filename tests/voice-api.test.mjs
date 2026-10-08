@@ -102,6 +102,8 @@ test('global provider uses each contact’s matching voice and reads both Playho
         tts: { apiKey: 'mini-key', elevenlabs: { apiKey: 'eleven-key' } } };
     assert.equal(h.scope.knownVoices('minimax', h.context)[0].label, '小米');
     assert.equal(h.scope.knownVoices('elevenlabs', h.context)[0].label, '小十一');
+    h.context.extensionSettings.playhouse.voiceBank.push({ voiceId: 'mini-new', label: '梨园新保存的音色' });
+    assert.ok(h.scope.knownVoices('minimax', h.context).some(v => v.voiceId === 'mini-new'));
     assert.equal(h.scope.voiceAvailability(message, h.context).config.voiceId, 'mini-a');
     h.settings.voiceProvider = 'elevenlabs';
     assert.equal(h.scope.voiceAvailability(message, h.context).config.voiceId, 'eleven-a');

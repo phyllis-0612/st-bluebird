@@ -2,18 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.3';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.3';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.3';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.3';
-import { scrollToFloor } from './chat-integration.js?v=0.6.3';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.3';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.3';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.3';
-import { getStoryContacts } from './proactive.js?v=0.6.3';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.3';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.3';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.3';
+import { icons } from './icons.js?v=0.6.4';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.4';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.4';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.4';
+import { scrollToFloor } from './chat-integration.js?v=0.6.4';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.4';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.4';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.4';
+import { getStoryContacts } from './proactive.js?v=0.6.4';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.4';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.4';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.4';
 
 let root = null;
 let page = 'list';
@@ -540,7 +540,12 @@ async function onClick(event) {
         const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
         try { requestPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
     }
-    if (btn.dataset.bbAction === 'refresh-playhouse-voices') { render(); return; }
+    if (btn.dataset.bbAction === 'refresh-playhouse-voices') {
+        render();
+        const count = knownVoices(getSettings().voiceProvider).length;
+        toastr.info(count ? `当前语音服务已读取 ${count} 个可选音色` : '当前语音服务在梨园中没有已保存的音色，请先到梨园导入，或手动填写 voice_id');
+        return;
+    }
     if (btn.dataset.bbAction === 'attachments') { attachmentType = attachmentType ? null : 'menu'; render(); return; }
     if (btn.dataset.bbAction === 'cancel-attachment') { attachmentType = null; render(); return; }
     if (btn.dataset.bbAttachment) { attachmentType = btn.dataset.bbAttachment; currentDraft().content = ''; currentDraft().note = ''; render(); root.querySelector('[data-bb-draft="content"]')?.focus(); return; }
@@ -620,8 +625,15 @@ function onChange(event) {
         setSetting(key, { ...getSettings()[key], [input.dataset.bbTtsField]: input.value.trim() });
         if (input.dataset.bbTtsField === 'apiKey') render(); return;
     }
-    if (input.dataset?.bbVoiceSelect !== undefined || input.dataset?.bbVoiceId !== undefined) {
-        persistContactVoice(input.dataset.bbVoiceSelect ?? input.dataset.bbVoiceId, input.value.trim());
+    if (input.dataset?.bbVoiceSelect !== undefined) {
+        persistContactVoice(input.dataset.bbVoiceSelect, input.value.trim());
+        // iOS 选择器在滚动选项时也可能触发 change；重建 select 会直接关掉原生弹层。
+        const manual = input.closest('.bb-contact-candidate')?.querySelector('[data-bb-voice-id]');
+        if (manual) manual.value = input.value;
+        return;
+    }
+    if (input.dataset?.bbVoiceId !== undefined) {
+        persistContactVoice(input.dataset.bbVoiceId, input.value.trim());
         render(); return;
     }
     if (input.dataset?.bbStatusTag !== undefined) {
