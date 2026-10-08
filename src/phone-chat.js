@@ -1,13 +1,14 @@
 // 第四段：后台手机回复和主线暂存快照，所有异步任务绑定原聊天。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.5.2';
-import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.5.2';
-import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.5.2';
-import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.5.2';
-import { selectedContacts } from './contacts.js?v=0.5.2';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.0';
+import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.6.0';
+import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.6.0';
+import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.6.0';
+import { selectedContacts } from './contacts.js?v=0.6.0';
+import { requestBluebirdRaw } from './api.js?v=0.6.0';
 
 export const PENDING_PROMPT_KEY = 'bluebird-pending';
 const jobs = new Map(), phoneStatusListeners = new Set();
-let initialized = false, epoch = 0, rawBusy = false, batch = null, serial = 0;
+let initialized = false, epoch = 0, rawBusy = false, batch = null;
 const normalTypes = [undefined, 'normal', 'regenerate', 'swipe'];
 function notify() { for (const fn of phoneStatusListeners) fn(); }
 export function onPhoneStatusChanged(fn) { phoneStatusListeners.add(fn); return () => phoneStatusListeners.delete(fn); }
@@ -54,27 +55,15 @@ async function runReply(job) {
     if (!validJob(job)) return;
     if (rawBusy || isGenerationBusy()) { job.timer = setTimeout(() => runReply(job), 300); return; }
     rawBusy = true; job.phase = 'typing'; notify();
-    let modelHook = null;
-    const context = ctx(), events = context.eventTypes || context.event_types || {};
+    const context = ctx();
     try {
-        if (typeof context.generateRaw !== 'function') throw new Error('当前酒馆缺少 generateRaw，请更新酒馆');
         const conversation = getChatState().conversations.find(c => c.name === job.name);
         const settings = { ...getSettings() };
         const contact = selectedContacts(context, settings).find(c => c.name === job.name);
         if (!contact) throw new Error('联系人已从通讯录移除');
         const request = await buildPhoneRequest(context, contact, conversation, settings);
         if (!validJob(job) || isGenerationBusy()) return;
-        // 模型只改带独有标记的这一次请求，不切换酒馆的模型或连接设置。
-        const marker = `[青鸟手机请求:${Date.now().toString(36)}-${++serial}]`;
-        request.systemPrompt += '\n' + marker;
-        if (settings.phoneModel) {
-            if (context.mainApi !== 'openai' || !events.CHAT_COMPLETION_SETTINGS_READY) throw new Error('独立模型需使用酒馆聊天补全连接；也可以清空手机模型跟随当前连接');
-            modelHook = data => {
-                if (Array.isArray(data.messages) && data.messages.some(m => JSON.stringify(m.content).includes(marker))) data.model = settings.phoneModel;
-            };
-            context.eventSource.on(events.CHAT_COMPLETION_SETTINGS_READY, modelHook);
-        }
-        const output = await context.generateRaw(request);
+        const output = await requestBluebirdRaw(context, request, settings);
         if (!validJob(job) || isGenerationBusy()) return;
         const lines = phoneReplyLines(output, job.name, settings.thinkTags);
         await appendPendingMessages(job.name, lines.map(m => m.fields), job.owner, () => validJob(job));
@@ -82,7 +71,6 @@ async function runReply(job) {
     } catch (error) {
         if (validJob(job)) { job.phase = 'error'; job.error = error.message || '回复失败，消息已保留，可以重试'; }
     } finally {
-        if (modelHook) context.eventSource.removeListener(events.CHAT_COMPLETION_SETTINGS_READY, modelHook);
         rawBusy = false; notify();
     }
 }

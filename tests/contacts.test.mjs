@@ -17,7 +17,7 @@ function harness() {
         } };
     const scope = vm.createContext({ ctx: () => context, getSettings: () => settings,
         setSetting: (key, value) => { settings[key] = value; saves++; }, world_info: { charLore: [{ name: 'role', extraBooks: ['副书'] }] } });
-    vm.runInContext(['messages', 'contacts', 'phone-memory'].map(source).join('\n'), scope);
+    vm.runInContext(['messages', 'api', 'contacts', 'phone-memory'].map(source).join('\n'), scope);
     return { scope, context, entries, settings, requests: () => requests, saves: () => saves };
 }
 

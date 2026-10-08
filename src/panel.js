@@ -2,16 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.5.2';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.5.2';
-import { createEntryModeControl } from './entry-controls.js?v=0.5.2';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.2';
-import { scrollToFloor } from './chat-integration.js?v=0.5.2';
-import { fingerprint, detectChatTags } from './messages.js?v=0.5.2';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.2';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.2';
-import { getStoryContacts } from './proactive.js?v=0.5.2';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.2';
+import { icons } from './icons.js?v=0.6.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.0';
+import { scrollToFloor } from './chat-integration.js?v=0.6.0';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.0';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.0';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.0';
+import { getStoryContacts } from './proactive.js?v=0.6.0';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.0';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.0';
+import { knownVoices, loadVoiceCatalog, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.0';
 
 let root = null;
 let page = 'list';
@@ -26,6 +28,11 @@ const drafts = new Map();
 let attachmentType = null;
 let sending = false;
 let candidates = null, extracting = false;
+let voiceCatalogLoading = '', presetModels = [], voiceLoadingId = '';
+function persistContactVoice(name, update) {
+    const contacts = selectedContacts().map(c => c.name === name ? { ...c, voice: { ...(c.voice || {}), ...update } } : c);
+    saveContacts(contacts);
+}
 function currentDraft() {
     if (!drafts.has(conversationId)) drafts.set(conversationId, { text: '', content: '', note: '' });
     return drafts.get(conversationId);
@@ -142,11 +149,12 @@ function renderMessage(message) {
             transcript.append(el('span', 'bb-card-caption', '转文字'), el('p', 'bb-card-text', message.content));
             const play = el('button', 'bb-voice-play'); play.type = 'button';
             play.dataset.bbVoice = message.id;
-            play.setAttribute('aria-label', '展开语音消息的文字');
+            const ready = voiceAvailability(message);
+            play.setAttribute('aria-label', ready.ready ? '播放语音并展开文字' : '展开语音消息的文字');
             play.setAttribute('aria-expanded', String(expanded));
             play.setAttribute('aria-controls', transcript.id);
             const icon = el('span', 'bb-voice-play-icon'); icon.innerHTML = icons.play(20);
-            play.append(icon, el('strong', '', '语音消息'), cardIcon('voice'));
+            play.append(icon, el('strong', '', playingVoiceId() === message.id ? '正在播放' : '语音消息'), cardIcon('voice'));
             bubble.append(play, transcript);
         }
     } else if (message.type === 'image') {
@@ -274,7 +282,26 @@ function renderContacts() {
         for (const [value, title] of [['restrained', '克制'], ['normal', '正常'], ['clingy', '黏人']]) {
             const option = el('option', null, title); option.value = value; option.selected = contact.level === value; level.append(option);
         }
-        row.append(level, el('span', 'bb-switch-hint', '声音设置将在第六段开放'));
+        row.append(level);
+        const provider = el('select', 'bb-settings-input'); provider.dataset.bbVoiceProvider = contact.name;
+        for (const [value, title] of [['', '不配音色 · 只看文字'], ['minimax', 'MiniMax'], ['elevenlabs', 'ElevenLabs']]) {
+            const option = el('option', null, title); option.value = value; option.selected = (contact.voice?.provider || '') === value; provider.append(option);
+        }
+        row.append(provider);
+        if (contact.voice?.provider) {
+            const voices = knownVoices(contact.voice.provider), chosen = contact.voice.voiceId || '';
+            const select = el('select', 'bb-settings-input'); select.dataset.bbVoiceSelect = contact.name;
+            for (const [value, title] of [['', '选择音色'], ...voices.map(v => [v.voiceId, v.label])]) {
+                const option = el('option', null, title); option.value = value; option.selected = chosen === value; select.append(option);
+            }
+            if (chosen && !voices.some(v => v.voiceId === chosen)) { const option = el('option', null, `${chosen}（手动填写）`); option.value = chosen; option.selected = true; select.append(option); }
+            row.append(select);
+            const manual = el('input', 'bb-settings-input'); manual.type = 'text'; manual.placeholder = '或手动输入 voice_id';
+            manual.value = chosen; manual.dataset.bbVoiceId = contact.name; row.append(manual);
+            const refresh = el('button', 'bb-reply-retry', voiceLoadingId === contact.name ? '正在获取音色…' : '刷新音色列表');
+            refresh.type = 'button'; refresh.disabled = Boolean(voiceLoadingId); refresh.dataset.bbAction = 'load-voices'; refresh.dataset.bbContact = contact.name;
+            row.append(refresh, el('span', 'bb-switch-hint', `Key 来源：${voiceSource(contact.voice.provider).source}`));
+        }
         wrap.append(row);
     }
     return wrap;
@@ -367,6 +394,34 @@ function renderSettings() {
         [[0, '靠近最新消息'], [1, '提前一楼']]);
     depth.append(el('span', 'bb-switch-hint', '默认靠近最新消息。若常用预设不遵守规则，可试试提前一楼。'));
     const phoneSettings = el('div', 'bb-phone-settings');
+    const api = el('section', 'bb-entry-setting bb-api-settings');
+    api.append(el('span', 'bb-switch-title', '青鸟 API 预设'), el('span', 'bb-switch-hint', '只用于手机回复和 NPC 提取；跟随酒馆时沿用下方的手机模型设置。'));
+    const presets = el('select', 'bb-settings-input'); presets.dataset.bbApiSelect = '';
+    for (const [id, title] of [['tavern', '跟随酒馆当前连接'], ...s.apiPresets.map(p => [p.id, p.name])]) {
+        const option = el('option', null, title); option.value = id; option.selected = s.activeApiPresetId === id; presets.append(option);
+    }
+    api.append(presets);
+    const controls = el('div', 'bb-api-controls');
+    for (const [action, title] of [['api-new', '新建'], ['api-copy', '复制'], ['api-delete', '删除']]) {
+        const button = el('button', 'bb-reply-retry', title); button.type = 'button'; button.dataset.bbAction = action;
+        button.disabled = action !== 'api-new' && !activeApiPreset(s); controls.append(button);
+    }
+    api.append(controls);
+    const active = activeApiPreset(s);
+    if (active) {
+        for (const [field, title, placeholder] of [['name', '名称', '给这个预设起名'], ['baseUrl', 'API 地址', 'https://example.com/v1'], ['apiKey', 'API Key', ''], ['model', '模型 ID', 'gemini-2.5-flash']]) {
+            const label = el('label', 'bb-entry-setting'); label.append(el('span', 'bb-switch-title', title));
+            const input = el('input', 'bb-settings-input'); input.type = field === 'apiKey' ? 'password' : 'text';
+            input.value = active[field] || ''; input.placeholder = placeholder; input.dataset.bbApiField = field; label.append(input); api.append(label);
+        }
+        const models = el('button', 'bb-reply-retry', '获取模型列表'); models.type = 'button'; models.dataset.bbAction = 'api-models'; api.append(models);
+        if (presetModels.length) {
+            const choices = el('select', 'bb-settings-input'); choices.dataset.bbApiModelChoice = '';
+            for (const name of ['', ...presetModels]) { const option = el('option', null, name || '从列表选择'); option.value = name; choices.append(option); }
+            api.append(choices);
+        }
+    }
+    phoneSettings.append(api);
     for (const [key, title, hint, min, max] of [
         ['phoneModel', '手机回复模型', '留空跟随酒馆当前模型。用 Flash 时填当前连接支持的准确模型 ID；不需要重复填 key。'],
         ['recentStoryCount', '无结绳时的近期剧情楼数', '有有效结绳记忆时，使用总结、脉络和实际未隐藏剧情。', 1, 200],
@@ -393,6 +448,21 @@ function renderSettings() {
             phoneSettings.append(scan);
         }
     }
+    const tts = el('section', 'bb-entry-setting bb-api-settings');
+    tts.append(el('span', 'bb-switch-title', '语音服务'), el('span', 'bb-switch-hint', '优先实时使用梨园里已有的 Key；梨园没填才用下方青鸟自己的 Key。'));
+    for (const [provider, label, config] of [['minimax', 'MiniMax', s.ttsMiniMax], ['elevenlabs', 'ElevenLabs', s.ttsElevenLabs]]) {
+        tts.append(el('span', 'bb-switch-title', `${label} · 当前使用${voiceSource(provider).source}`));
+        for (const [field, title] of [['baseUrl', '地址'], ['apiKey', 'Key'], ...(provider === 'minimax' ? [['groupId', 'GroupId']] : []), ['model', '模型']]) {
+            const entry = el('label', 'bb-entry-setting'); entry.append(el('span', 'bb-switch-hint', `${label} ${title}`));
+            const input = el('input', 'bb-settings-input'); input.type = field === 'apiKey' ? 'password' : 'text';
+            input.value = config[field] || ''; input.dataset.bbTtsProvider = provider; input.dataset.bbTtsField = field;
+            entry.append(input); tts.append(entry);
+        }
+    }
+    const cacheLimit = el('label', 'bb-entry-setting'); cacheLimit.append(el('span', 'bb-switch-title', '语音缓存上限 MB'));
+    const cacheInput = el('input', 'bb-settings-input'); cacheInput.type = 'number'; cacheInput.min = '10'; cacheInput.max = '1000'; cacheInput.step = '1';
+    cacheInput.value = String(s.voiceCacheMB); cacheInput.dataset.bbSetting = 'voiceCacheMB'; cacheLimit.append(cacheInput); tts.append(cacheLimit);
+    phoneSettings.append(tts);
     wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, phoneSettings, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
@@ -432,6 +502,22 @@ async function onClick(event) {
         closePanel();
         return;
     }
+    if (['api-new', 'api-copy', 'api-delete'].includes(btn.dataset.bbAction)) {
+        const settings = getSettings(), current = activeApiPreset(settings);
+        let list = [...settings.apiPresets], activeId = settings.activeApiPresetId;
+        if (btn.dataset.bbAction === 'api-delete' && current) { list = list.filter(p => p.id !== current.id); activeId = 'tavern'; }
+        else if (btn.dataset.bbAction !== 'api-delete') {
+            const copy = btn.dataset.bbAction === 'api-copy' && current;
+            const item = { ...(copy ? current : { name: '新预设', baseUrl: '', apiKey: '', model: '' }),
+                id: `bb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}` };
+            if (copy) item.name += ' 副本'; list.push(item); activeId = item.id;
+        }
+        presetModels = []; saveApiPresets(list, activeId); render(); return;
+    }
+    if (btn.dataset.bbAction === 'api-models') {
+        try { presetModels = await listApiModels(activeApiPreset()); render(); if (!presetModels.length) toastr.info('接口未返回模型列表，可手动填写模型 ID'); }
+        catch (error) { toastr.error(error.message); } return;
+    }
     if (btn.dataset.bbAction === 'extract-contacts') {
         if (extracting || isGenerationBusy()) return;
         const owner = captureCurrentChat(); extracting = true; render();
@@ -444,11 +530,11 @@ async function onClick(event) {
     }
     if (btn.dataset.bbAction === 'add-contacts') {
         const picked = (candidates || []).filter(c => c.selected);
-        const saved = selectedContacts().map(c => ({ name: c.name, source: c.source, level: c.level }));
+        const saved = selectedContacts().map(c => ({ name: c.name, source: c.source, level: c.level, voice: c.voice }));
         for (const item of picked) {
             const at = saved.findIndex(c => c.name.normalize('NFC') === item.name.normalize('NFC'));
             const contact = { name: item.name, source: item.source, level: item.level };
-            if (at < 0) saved.push(contact); else if (saved[at].source.type === item.source.type) saved[at] = contact;
+            if (at < 0) saved.push(contact); else if (saved[at].source.type === item.source.type) saved[at] = { ...contact, voice: saved[at].voice };
         }
         saveContacts(saved); candidates = null; rebuildChatState('contacts'); render(); return;
     }
@@ -456,6 +542,15 @@ async function onClick(event) {
     if (btn.dataset.bbAction === 'request-reply') {
         const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
         try { requestPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
+    }
+    if (btn.dataset.bbAction === 'load-voices') {
+        const name = btn.dataset.bbContact, contact = selectedContacts().find(c => c.name === name);
+        if (!contact?.voice?.provider || voiceLoadingId) return;
+        voiceLoadingId = name; render();
+        try { await loadVoiceCatalog(contact.voice.provider); toastr.info('音色列表已更新'); }
+        catch (error) { toastr.error(`获取音色失败：${error.message}`); }
+        finally { voiceLoadingId = ''; if (isOpen && page === 'contacts') render(); }
+        return;
     }
     if (btn.dataset.bbAction === 'attachments') { attachmentType = attachmentType ? null : 'menu'; render(); return; }
     if (btn.dataset.bbAction === 'cancel-attachment') { attachmentType = null; render(); return; }
@@ -470,6 +565,11 @@ async function onClick(event) {
         const transcript = btn.closest('.bb-card-voice')?.querySelector('.bb-voice-transcript');
         if (transcript) transcript.hidden = false;
         btn.setAttribute('aria-expanded', 'true');
+        if (voiceAvailability(message).ready) {
+            if (playingVoiceId() === id) { stopVoice(); return; }
+            try { await playVoice(message); }
+            catch (error) { stopVoice(); toastr.error(`语音播放失败：${error.message}`); }
+        }
         return;
     }
     if (btn.dataset.bbFloorMessage) {
@@ -516,6 +616,28 @@ function onInput(event) {
 function onChange(event) {
     const input = event.target;
     if (input.disabled) return;
+    if (input.dataset?.bbApiSelect !== undefined) {
+        presetModels = []; setSetting('activeApiPresetId', input.value); render(); return;
+    }
+    if (input.dataset?.bbApiField !== undefined || input.dataset?.bbApiModelChoice !== undefined) {
+        const field = input.dataset.bbApiModelChoice !== undefined ? 'model' : input.dataset.bbApiField;
+        if (field === 'model' && !input.value) return;
+        const current = activeApiPreset(); if (!current) return;
+        saveApiPresets(getSettings().apiPresets.map(p => p.id === current.id ? { ...p, [field]: input.value.trim() } : p), current.id);
+        if (field === 'name' || input.dataset.bbApiModelChoice !== undefined) render(); return;
+    }
+    if (input.dataset?.bbTtsProvider !== undefined) {
+        const key = input.dataset.bbTtsProvider === 'minimax' ? 'ttsMiniMax' : 'ttsElevenLabs';
+        setSetting(key, { ...getSettings()[key], [input.dataset.bbTtsField]: input.value.trim() });
+        if (input.dataset.bbTtsField === 'apiKey') render(); return;
+    }
+    if (input.dataset?.bbVoiceProvider !== undefined) {
+        persistContactVoice(input.dataset.bbVoiceProvider, { provider: input.value, voiceId: '' }); render(); return;
+    }
+    if (input.dataset?.bbVoiceSelect !== undefined || input.dataset?.bbVoiceId !== undefined) {
+        persistContactVoice(input.dataset.bbVoiceSelect ?? input.dataset.bbVoiceId, { voiceId: input.value.trim() });
+        render(); return;
+    }
     if (input.dataset?.bbStatusTag !== undefined) {
         const name = input.dataset.bbStatusTag;
         const tags = getSettings().statusTags.filter(t => t !== name);
@@ -528,12 +650,12 @@ function onChange(event) {
     if (input.dataset?.bbCandidate !== undefined) { if (candidates?.[Number(input.dataset.bbCandidate)]) candidates[Number(input.dataset.bbCandidate)].selected = input.checked; return; }
     if (input.dataset?.bbCandidateLevel !== undefined) { if (candidates?.[Number(input.dataset.bbCandidateLevel)]) candidates[Number(input.dataset.bbCandidateLevel)].level = input.value; return; }
     if (input.dataset?.bbContactLevel !== undefined) {
-        const contacts = selectedContacts().map(c => ({ name: c.name, source: c.source, level: c.name === input.dataset.bbContactLevel ? input.value : c.level }));
+        const contacts = selectedContacts().map(c => ({ ...c, level: c.name === input.dataset.bbContactLevel ? input.value : c.level }));
         saveContacts(contacts); return;
     }
     const key = input.dataset?.bbSetting;
     if (!key) return;
-    if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneReplyTokens'].includes(key)) {
+    if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneReplyTokens', 'voiceCacheMB'].includes(key)) {
         if (key === 'statusTags') {
             const tags = parseTagNames(input.value); setSetting(key, tags); input.value = tags.join(', ');
             root.querySelectorAll('[data-bb-status-tag]').forEach(node => { node.checked = tags.includes(node.dataset.bbStatusTag); });

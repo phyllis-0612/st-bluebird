@@ -24,7 +24,7 @@ function harness() {
     const scope = vm.createContext({ world_info: {}, ctx: () => context, getSettings: () => settings, onSettingChanged() {},
         setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); },
         crypto: { randomUUID: () => 'id-' + (++serial) }, console, toastr: { error: t => errors.push(t), info: t => errors.push(t) } });
-    vm.runInContext(['messages', 'contacts', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);
+    vm.runInContext(['messages', 'api', 'contacts', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);
     scope.rebuildChatState(); scope.initPhoneChat();
     const emit = async (key, ...args) => { for (const fn of events.get(key) || []) await fn(...args); };
     const flush = async delay => { const list = [...timers.entries()].filter(([, t]) => t.delay === delay); for (const [id, t] of list) { timers.delete(id); await t.fn(); } };

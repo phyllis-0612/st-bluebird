@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.5.2';
+export const VERSION = '0.6.0';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
@@ -32,6 +32,11 @@ const DEFAULTS = Object.freeze({
     proactiveCooldown: 3, // 两次主线来信之间隔开的楼层，用户楼层也计入
     proactiveDepth: 0,
     phoneModel: '', // 留空跟随酒馆模型；可填写当前连接支持的 Flash 模型 ID
+    apiPresets: [], // 青鸟独立 OpenAI 兼容预设；空表示跟随酒馆
+    activeApiPresetId: 'tavern',
+    ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' },
+    ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' },
+    voiceCacheMB: 200,
     recentStoryCount: 20,
     phoneHistoryCount: 30,
     phoneReplyTokens: 1024,
@@ -54,7 +59,7 @@ export function getSettings() {
     }
     const s = store[KEY];
     for (const [k, v] of Object.entries(DEFAULTS)) {
-        if (s[k] === undefined) s[k] = Array.isArray(v) ? [...v] : v;
+        if (s[k] === undefined) s[k] = Array.isArray(v) ? [...v] : v && typeof v === 'object' ? { ...v } : v;
     }
     if (typeof s.enabled !== 'boolean') s.enabled = DEFAULTS.enabled;
     if (typeof s.inlineNotice !== 'boolean') s.inlineNotice = DEFAULTS.inlineNotice;
@@ -65,6 +70,14 @@ export function getSettings() {
     if (![0, 1].includes(s.proactiveDepth)) s.proactiveDepth = DEFAULTS.proactiveDepth;
     if (typeof s.phoneModel !== 'string') s.phoneModel = '';
     s.phoneModel = s.phoneModel.trim();
+    if (!Array.isArray(s.apiPresets)) s.apiPresets = [];
+    s.apiPresets = s.apiPresets.filter(p => p && typeof p === 'object' && typeof p.id === 'string' && typeof p.name === 'string');
+    if (typeof s.activeApiPresetId !== 'string' || (s.activeApiPresetId !== 'tavern' && !s.apiPresets.some(p => p.id === s.activeApiPresetId))) s.activeApiPresetId = 'tavern';
+    for (const [key, defaults] of [['ttsMiniMax', DEFAULTS.ttsMiniMax], ['ttsElevenLabs', DEFAULTS.ttsElevenLabs]]) {
+        if (!s[key] || typeof s[key] !== 'object' || Array.isArray(s[key])) s[key] = {};
+        for (const [field, value] of Object.entries(defaults)) if (typeof s[key][field] !== 'string') s[key][field] = value;
+    }
+    if (!Number.isSafeInteger(s.voiceCacheMB) || s.voiceCacheMB < 10 || s.voiceCacheMB > 1000) s.voiceCacheMB = 200;
     for (const [key, min, max] of [['recentStoryCount', 1, 200], ['phoneHistoryCount', 1, 200], ['phoneReplyTokens', 128, 8192]]) {
         if (!Number.isSafeInteger(s[key]) || s[key] < min || s[key] > max) s[key] = DEFAULTS[key];
     }

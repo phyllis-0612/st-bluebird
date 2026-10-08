@@ -21,11 +21,11 @@ function panelHarness() {
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
     const sent = [], replies = [], status = { phase: 'idle' };
-    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], apiPresets: [], activeApiPresetId: 'tavern', ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' }, ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' }, voiceCacheMB: 200, proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
         rootNode: root, icons, fingerprint, detectChatTags, normalizeTagName: value => String(value).replace(/[<>]/g, '').trim(),
         parseTagNames: value => [...new Set(String(value).split(/[,，\s]+/).map(t => t.replace(/[<>]/g, '').trim()).filter(Boolean))],
-        getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.5.2', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        activeApiPreset: () => settings.apiPresets.find(p => p.id === settings.activeApiPresetId), saveApiPresets: (list, id) => { settings.apiPresets = list; settings.activeApiPresetId = id; }, listApiModels: async () => ['flash'], knownVoices: () => [], loadVoiceCatalog: async () => [], voiceSource: () => ({ source: '未配置' }), voiceAvailability: () => ({ ready: false }), playingVoiceId: () => '', playVoice: async () => false, stopVoice() {}, getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.5.2', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0, chat: [{ mes: '<灵魂疏理>隐秘</灵魂疏理><状态栏>体力 80</状态栏><content>正文</content>' }] }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
@@ -227,6 +227,18 @@ test('Chinese thought tag persists and detected status tag can be checked and un
     assert.match(h.root.querySelector('[data-bb-setting="thinkTags"]').value, /灵魂疏理/);
     status = h.root.querySelector('[data-bb-status-tag="状态栏"]'); assert.equal(status.checked, true);
     status.checked = false; h.scope.onChange({ target: status }); assert.equal(h.settings.statusTags.includes('状态栏'), false);
+});
+
+test('API presets can be created, filled, selected and deleted without changing Tavern settings', async () => {
+    const h = panelHarness(); h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    await h.click(h.root.querySelector('[data-bb-action="api-new"]'));
+    assert.equal(h.settings.apiPresets.length, 1);
+    const name = h.root.querySelector('[data-bb-api-field="name"]'); name.value = 'Flash'; h.scope.onChange({ target: name });
+    const url = h.root.querySelector('[data-bb-api-field="baseUrl"]'); url.value = 'https://api.example/v1'; h.scope.onChange({ target: url });
+    assert.equal(h.settings.apiPresets[0].name, 'Flash'); assert.equal(h.settings.apiPresets[0].baseUrl, 'https://api.example/v1');
+    await h.click(h.root.querySelector('[data-bb-action="api-copy"]')); assert.equal(h.settings.apiPresets.length, 2);
+    await h.click(h.root.querySelector('[data-bb-action="api-delete"]')); assert.equal(h.settings.apiPresets.length, 1);
+    assert.equal(h.settings.activeApiPresetId, 'tavern');
 });
 
 test('phone composer preserves drafts on refresh, sends text and transfer, clears only successfully sent fields', async () => {
