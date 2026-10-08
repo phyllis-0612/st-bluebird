@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
@@ -21,6 +21,13 @@ const DEFAULTS = Object.freeze({
     proactiveLevel: 'normal',
     proactiveCooldown: 3, // 两次主线来信之间隔开的楼层，用户楼层也计入
     proactiveDepth: 0,
+    phoneModel: '', // 留空跟随酒馆模型；可填写当前连接支持的 Flash 模型 ID
+    recentStoryCount: 20,
+    phoneHistoryCount: 30,
+    phoneDebounceMs: 1500,
+    phoneReplyTokens: 1024,
+    bodyTag: 'content',
+    statusTags: ['status', 'statusbar', 'state', 'details'],
     thinkTags: ['think', 'thinking', 'analysis', 'reasoning'],
     entryMode: 'floating', // floating 悬浮球 | wand 魔法棒
     floatPosition: null,   // 拖动后保存为可用屏幕范围内的比例位置
@@ -47,6 +54,14 @@ export function getSettings() {
     if (!['restrained', 'normal', 'clingy'].includes(s.proactiveLevel)) s.proactiveLevel = DEFAULTS.proactiveLevel;
     if (!Number.isSafeInteger(s.proactiveCooldown) || s.proactiveCooldown < 0) s.proactiveCooldown = DEFAULTS.proactiveCooldown;
     if (![0, 1].includes(s.proactiveDepth)) s.proactiveDepth = DEFAULTS.proactiveDepth;
+    if (typeof s.phoneModel !== 'string') s.phoneModel = '';
+    s.phoneModel = s.phoneModel.trim();
+    for (const [key, min, max] of [['recentStoryCount', 1, 200], ['phoneHistoryCount', 1, 200], ['phoneDebounceMs', 0, 10000], ['phoneReplyTokens', 128, 8192]]) {
+        if (!Number.isSafeInteger(s[key]) || s[key] < min || s[key] > max) s[key] = DEFAULTS[key];
+    }
+    if (typeof s.bodyTag !== 'string' || !/^[a-z][a-z0-9_-]*$/i.test(s.bodyTag)) s.bodyTag = DEFAULTS.bodyTag;
+    if (!Array.isArray(s.statusTags)) s.statusTags = [...DEFAULTS.statusTags];
+    s.statusTags = [...new Set(s.statusTags.filter(t => typeof t === 'string' && /^[a-z][a-z0-9_-]*$/i.test(t)).map(t => t.toLowerCase()))];
     if (!Array.isArray(s.thinkTags)) s.thinkTags = [...DEFAULTS.thinkTags];
     s.thinkTags = [...new Set(s.thinkTags.filter(t => typeof t === 'string' && /^[a-z][a-z0-9_-]*$/i.test(t)).map(t => t.toLowerCase()))];
     if (!['auto', 'day', 'night'].includes(s.theme)) s.theme = DEFAULTS.theme;

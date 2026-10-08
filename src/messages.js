@@ -39,6 +39,9 @@ export function splitFields(line) {
         if (c === '|') { result.push(part.trim()); part = ''; }
         else if (c === '\\' && i + 1 < line.length) {
             const n = line[++i];
+            if (n === 'u' && /^00(?:3c|3e|26)$/i.test(line.slice(i + 1, i + 5))) {
+                part += String.fromCharCode(parseInt(line.slice(i + 1, i + 5), 16)); i += 4; continue;
+            }
             part += n === 'n' ? '\n' : n === 'r' ? '\r' : n === '|' || n === '\\' ? n : '\\' + n;
         } else part += c;
     }
@@ -47,13 +50,30 @@ export function splitFields(line) {
 }
 
 export function serializeFields(fields) {
-    return fields.map(value => String(value).replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\|/g, '\\|')).join('|');
+    return fields.map(value => String(value).replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\|/g, '\\|')
+        .replace(/</g, '\\u003c').replace(/>/g, '\\u003e')).join('|');
+}
+
+export function escapeAttribute(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\r/g, '&#13;').replace(/\n/g, '&#10;');
+}
+
+export function storyContacts(context) {
+    const characters = context.characters || [];
+    const group = context.groupId != null && context.groupId !== ''
+        ? context.groups?.find(g => String(g.id) === String(context.groupId)) : null;
+    const cards = context.groupId != null && context.groupId !== ''
+        ? (group?.members || []).filter(a => !(group.disabled_members || []).includes(a)).map(a => characters.find(c => c.avatar === a))
+        : [characters[context.characterId]];
+    return [...new Set(cards.map(c => c?.name?.trim()).filter(Boolean))];
 }
 
 function attributes(text) {
     const attrs = {};
     for (const m of text.matchAll(/([a-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)) {
-        attrs[m[1].toLowerCase()] = (m[2] ?? m[3] ?? m[4]).trim();
+        attrs[m[1].toLowerCase()] = (m[2] ?? m[3] ?? m[4]).trim().replace(/&(quot|lt|gt|amp|#10|#13);/g,
+            (_, key) => ({ quot: '"', lt: '<', gt: '>', amp: '&', '#10': '\n', '#13': '\r' })[key]);
     }
     return attrs;
 }

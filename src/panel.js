@@ -1,14 +1,16 @@
 // 青鸟 · 手机面板
 // 手机端全屏面板。
-// 第二段：读取楼层消息、展示会话和卡片；主动输入随后开放。
+// 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.3.0';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.3.0';
-import { createEntryModeControl } from './entry-controls.js?v=0.3.0';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.3.0';
-import { scrollToFloor } from './chat-integration.js?v=0.3.0';
-import { fingerprint } from './messages.js?v=0.3.0';
-import { getStoryContacts } from './proactive.js?v=0.3.0';
+import { icons } from './icons.js?v=0.4.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.4.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.4.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.4.0';
+import { scrollToFloor } from './chat-integration.js?v=0.4.0';
+import { fingerprint } from './messages.js?v=0.4.0';
+import { sendPhoneMessage, retryPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.4.0';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.4.0';
+import { getStoryContacts } from './proactive.js?v=0.4.0';
 
 let root = null;
 let page = 'list';
@@ -19,6 +21,13 @@ let backgroundObserver = null;
 let conversationId = null;
 let transferPending = false;
 const expandedVoiceIds = new Set();
+const drafts = new Map();
+let attachmentType = null;
+let sending = false;
+function currentDraft() {
+    if (!drafts.has(conversationId)) drafts.set(conversationId, { text: '', content: '', note: '' });
+    return drafts.get(conversationId);
+}
 
 /** 全屏时隔离背后的酒馆控件，关闭时恢复原来的 inert 状态。 */
 function lockBackground() {
@@ -79,7 +88,7 @@ function emptyState(title, text) {
 
 function renderList() {
     const state = getChatState();
-    if (!state.conversations.length) return emptyState('还没有消息', '联系人不在你身边、有合适时机时，会随剧情发来手机消息。你主动聊天将在第四段开放。');
+    if (!state.conversations.length) return emptyState('还没有消息', '联系人不在你身边、有合适时机时，会随剧情发来手机消息。可以从通讯录打开联系人，主动给她发消息。');
     const list = el('div', 'bb-conversations');
     list.append(el('p', 'bb-section-caption', '剧情之外，也有牵挂'));
     for (const conversation of state.conversations) {
@@ -90,9 +99,9 @@ function renderList() {
         const content = el('span', 'bb-conversation-copy');
         const title = el('span', 'bb-conversation-title', conversation.name);
         const last = conversation.messages.at(-1);
-        content.append(title, el('span', 'bb-conversation-preview', `${last.isSelf ? '我：' : ''}${messagePreview(last)}`));
+        content.append(title, el('span', 'bb-conversation-preview', last ? `${last.isSelf ? '我：' : ''}${messagePreview(last)}` : '点开开始聊天'));
         const meta = el('span', 'bb-conversation-meta');
-        meta.append(el('span', 'bb-floor-label', `第 ${last.floorIndex + 1} 楼`));
+        meta.append(el('span', 'bb-floor-label', last?.pending ? '暂存' : last ? `第 ${last.floorIndex + 1} 楼` : '联系人'));
         if (conversation.unread) meta.append(el('span', 'bb-unread-pill', conversation.unread > 99 ? '99+' : String(conversation.unread)));
         button.append(avatar, content, meta); list.append(button);
     }
@@ -178,9 +187,12 @@ function renderConversation() {
     if (state.presentFloor !== null) title.querySelector('.bb-presence').title = `来自第 ${state.presentFloor + 1} 楼的在场名单`;
     header.append(back, title); wrap.append(header);
     const messages = el('div', 'bb-message-list');
-    let previousFloor = null;
+    let previousFloor = -1;
     for (const message of conversation.messages) {
-        if (message.floorIndex !== previousFloor) {
+        if (message.pending && previousFloor !== null) {
+            messages.append(el('p', 'bb-floor-divider', '手机聊天 · 下一轮剧情后保存到楼层'));
+            previousFloor = null;
+        } else if (!message.pending && message.floorIndex !== previousFloor) {
             const divider = el('button', 'bb-floor-divider', `第 ${message.floorIndex + 1} 楼${message.source === 'phone' ? ' · 手机聊天' : ''} ↗`);
             divider.type = 'button'; divider.dataset.bbFloorMessage = message.id;
             divider.setAttribute('aria-label', `返回酒馆第 ${message.floorIndex + 1} 楼`);
@@ -189,11 +201,41 @@ function renderConversation() {
         messages.append(renderMessage(message));
     }
     wrap.append(messages);
+    const status = getPhoneStatus(conversation.name);
+    if (status.phase === 'waiting' || status.phase === 'typing') {
+        const typing = el('p', 'bb-phone-status', '对方正在输入…'); typing.setAttribute('role', 'status'); wrap.append(typing);
+    } else if (status.phase === 'error' || (conversation.messages.at(-1)?.pending && conversation.messages.at(-1)?.isSelf)) {
+        const warning = el('div', 'bb-phone-status is-error');
+        warning.append(el('span', '', status.error || '待回复的消息已保留'));
+        const retry = el('button', 'bb-reply-retry', '重试回复'); retry.type = 'button'; retry.dataset.bbAction = 'retry-reply'; warning.append(retry); wrap.append(warning);
+    }
+    const allowed = getStoryContacts().includes(conversation.name) && !isGenerationBusy();
+    const composeWrap = el('div', 'bb-compose-wrap');
+    const draft = currentDraft();
+    if (attachmentType === 'menu') {
+        const menu = el('div', 'bb-attachments');
+        for (const [type, label] of [['voice', '语音'], ['transfer', '转账'], ['image', '图片'], ['location', '定位']]) {
+            const button = el('button', 'bb-attachment-option', label); button.type = 'button'; button.dataset.bbAttachment = type; menu.append(button);
+        }
+        composeWrap.append(menu);
+    } else if (attachmentType) {
+        const labels = { voice: ['语音消息', '写下语音里说的话'], transfer: ['转账', '金额，例如 20.00'], image: ['图片', '描述你发的照片画面'], location: ['定位', '地点名称'] };
+        const form = el('div', 'bb-attachment-form'); form.append(el('strong', '', labels[attachmentType][0]));
+        const content = el('input', 'bb-settings-input bb-attachment-input'); content.value = draft.content; content.placeholder = labels[attachmentType][1]; content.dataset.bbDraft = 'content';
+        if (attachmentType === 'transfer') content.inputMode = 'decimal';
+        form.append(content);
+        if (attachmentType === 'transfer' || attachmentType === 'location') {
+            const note = el('input', 'bb-settings-input bb-attachment-input'); note.value = draft.note; note.placeholder = '备注（可不填）'; note.dataset.bbDraft = 'note'; form.append(note);
+        }
+        const send = el('button', 'bb-compose-send', '发送'); send.type = 'button'; send.dataset.bbAction = 'send-attachment'; send.disabled = !allowed || sending;
+        const cancel = el('button', 'bb-reply-retry', '取消'); cancel.type = 'button'; cancel.dataset.bbAction = 'cancel-attachment';
+        form.append(send, cancel, el('span', 'bb-switch-hint', attachmentType === 'image' ? '发送画面描述；暂不上传或生成图片。' : attachmentType === 'voice' ? '发送语音文字；声音播放在第六段接入。' : '')); composeWrap.append(form);
+    }
     const composer = el('div', 'bb-composer');
-    const plus = el('button', 'bb-composer-plus', '+'); plus.type = 'button'; plus.disabled = true; plus.setAttribute('aria-label', '附件，随后开放');
-    const input = el('input', 'bb-compose-input'); input.placeholder = '主动聊天将在第四段开放'; input.disabled = true;
-    input.setAttribute('aria-label', '消息输入，随后开放');
-    composer.append(plus, input); wrap.append(composer);
+    const plus = el('button', 'bb-composer-plus', '+'); plus.type = 'button'; plus.disabled = !allowed || sending; plus.dataset.bbAction = 'attachments'; plus.setAttribute('aria-label', '添加语音、转账、图片或定位');
+    const input = el('input', 'bb-compose-input'); input.placeholder = allowed ? '发一条消息…' : '等待剧情结束，或选择角色卡联系人'; input.disabled = !allowed || sending; input.value = draft.text; input.dataset.bbDraft = 'text'; input.setAttribute('aria-label', '手机消息');
+    const send = el('button', 'bb-compose-send', '发送'); send.type = 'button'; send.dataset.bbAction = 'send-text'; send.disabled = !allowed || sending;
+    composer.append(plus, input, send); composeWrap.append(composer); wrap.append(composeWrap);
     return wrap;
 }
 
@@ -203,7 +245,7 @@ function renderContacts() {
     const wrap = el('div', 'bb-settings');
     wrap.append(el('p', 'bb-switch-hint', '当前使用角色卡联系人，群聊使用未停用的成员。更多联系人将在第五段开放。'));
     for (const name of names) {
-        const row = el('div', 'bb-entry-setting');
+        const row = el('button', 'bb-entry-setting bb-contact-row'); row.type = 'button'; row.dataset.bbConversation = `name:${name.normalize('NFC')}`;
         row.append(el('span', 'bb-switch-title', name), el('span', 'bb-switch-hint', '主动程度使用设置页的默认值'));
         wrap.append(row);
     }
@@ -296,7 +338,22 @@ function renderSettings() {
     const depth = settingsChoices('手机规则位置', 'proactiveDepth', s.proactiveDepth,
         [[0, '靠近最新消息'], [1, '提前一楼']]);
     depth.append(el('span', 'bb-switch-hint', '默认靠近最新消息。若常用预设不遵守规则，可试试提前一楼。'));
-    wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    const phoneSettings = el('div', 'bb-phone-settings');
+    for (const [key, title, hint, min, max] of [
+        ['phoneModel', '手机回复模型', '留空跟随酒馆当前模型。用 Flash 时填当前连接支持的准确模型 ID；不需要重复填 key。'],
+        ['recentStoryCount', '无结绳时的近期剧情楼数', '有有效结绳记忆时，使用总结、脉络和实际未隐藏剧情。', 1, 200],
+        ['phoneHistoryCount', '手机回复记录条数', '只限制带给模型的会话记录，不删除暂存消息。', 1, 200],
+        ['phoneDebounceMs', '连发等待（毫秒）', '默认 1500 毫秒；连续发消息后合并回复。', 0, 10000],
+        ['phoneReplyTokens', '手机回复最大 token', '默认 1024，供短消息回复使用。', 128, 8192],
+        ['bodyTag', '剧情正文标签', '默认 content；找不到时使用去除思考、手机和状态块的正文。'],
+        ['statusTags', '排除的状态栏标签', '逗号分隔，不把这些块带给手机回复模型。'],
+    ]) {
+        const field = el('label', 'bb-entry-setting'); field.append(el('span', 'bb-switch-title', title), el('span', 'bb-switch-hint', hint));
+        const input = el('input', 'bb-settings-input'); input.type = min === undefined ? 'text' : 'number'; input.value = Array.isArray(s[key]) ? s[key].join(', ') : String(s[key]); input.dataset.bbSetting = key;
+        if (min !== undefined) { input.min = String(min); input.max = String(max); input.step = '1'; input.inputMode = 'numeric'; }
+        field.append(input); phoneSettings.append(field);
+    }
+    wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, phoneSettings, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
@@ -318,7 +375,14 @@ function render() {
         if (active) btn.setAttribute('aria-current', 'page');
         else btn.removeAttribute('aria-current');
     });
+    const active = document.activeElement;
+    const draftKey = active?.dataset?.bbDraft;
+    const selection = draftKey ? [active.selectionStart, active.selectionEnd] : null;
     root.querySelector('.bb-body').replaceChildren(pages[page]());
+    if (draftKey) {
+        const next = root.querySelector(`[data-bb-draft="${draftKey}"]`);
+        if (next && !next.disabled) { next.focus({ preventScroll: true }); if (typeof next.setSelectionRange === 'function' && selection[0] !== null) next.setSelectionRange(...selection); }
+    }
 }
 
 async function onClick(event) {
@@ -328,6 +392,14 @@ async function onClick(event) {
         closePanel();
         return;
     }
+    if (btn.dataset.bbAction === 'send-text' || btn.dataset.bbAction === 'send-attachment') { await submitPhone(btn.dataset.bbAction === 'send-text'); return; }
+    if (btn.dataset.bbAction === 'retry-reply') {
+        const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
+        try { retryPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
+    }
+    if (btn.dataset.bbAction === 'attachments') { attachmentType = attachmentType ? null : 'menu'; render(); return; }
+    if (btn.dataset.bbAction === 'cancel-attachment') { attachmentType = null; render(); return; }
+    if (btn.dataset.bbAttachment) { attachmentType = btn.dataset.bbAttachment; currentDraft().content = ''; currentDraft().note = ''; render(); root.querySelector('[data-bb-draft="content"]')?.focus(); return; }
     if (btn.dataset.bbAction === 'back') { page = 'list'; conversationId = null; render(); return; }
     if (btn.dataset.bbConversation) { openConversation(btn.dataset.bbConversation); return; }
     if (btn.dataset.bbVoice) {
@@ -363,11 +435,37 @@ async function onClick(event) {
     }
 }
 
+async function submitPhone(isText) {
+    if (sending) return;
+    const id = conversationId, name = getChatState().conversations.find(c => c.id === id)?.name;
+    const owner = captureCurrentChat(), draft = currentDraft(), type = isText ? 'text' : attachmentType;
+    const content = isText ? draft.text : draft.content, note = isText ? '' : draft.note;
+    sending = true; render();
+    try {
+        await sendPhoneMessage(name, type, content, note);
+        if (isText) draft.text = ''; else { draft.content = ''; draft.note = ''; if (conversationId === id && currentChatMatches(owner)) attachmentType = null; }
+    } catch (error) { toastr.error(error.message || '发送失败，输入已保留'); }
+    finally { sending = false; if (currentChatMatches(owner) && isOpen && conversationId === id) { render(); root.querySelector('.bb-compose-input')?.focus({ preventScroll: true }); } }
+}
+
+function onInput(event) {
+    const key = event.target.dataset?.bbDraft;
+    if (key && page === 'conversation') currentDraft()[key] = event.target.value;
+}
+
 function onChange(event) {
     const input = event.target;
     if (input.disabled) return;
     const key = input.dataset?.bbSetting;
     if (!key) return;
+    if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneDebounceMs', 'phoneReplyTokens'].includes(key)) {
+        if (key === 'statusTags') setSetting(key, input.value.split(/[,，\s]+/).filter(t => /^[a-z][a-z0-9_-]*$/i.test(t)));
+        else if (key === 'phoneModel') setSetting(key, input.value.trim());
+        else if (key === 'bodyTag' && /^[a-z][a-z0-9_-]*$/i.test(input.value.trim())) setSetting(key, input.value.trim());
+        else if (key !== 'bodyTag' && input.value.trim() && Number.isSafeInteger(Number(input.value)) && Number(input.value) >= Number(input.min) && Number(input.value) <= Number(input.max)) setSetting(key, Number(input.value));
+        else { input.value = String(getSettings()[key]); toastr.info('请输入有效的设置值'); }
+        return;
+    }
     if (key === 'theme') {
         setSetting('theme', input.value);
         applyThemeEverywhere();
@@ -393,6 +491,7 @@ function onChange(event) {
 
 function onKeydown(event) {
     if (!isOpen || event.isComposing) return;
+    if (event.key === 'Enter' && event.target?.classList?.contains('bb-compose-input')) { event.preventDefault(); event.stopPropagation(); submitPhone(true); return; }
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -439,6 +538,7 @@ export function mountPanel() {
     document.body.appendChild(root);
     root.addEventListener('click', onClick);
     root.addEventListener('change', onChange);
+    root.addEventListener('input', onInput);
     root.addEventListener('keydown', onKeydown);
     applyThemeEverywhere();
     return root;
@@ -480,7 +580,7 @@ export function togglePanel() {
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
     if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
-    if (reason === 'chat') { conversationId = null; if (page === 'conversation') page = 'list'; }
+    if (reason === 'chat') { drafts.clear(); attachmentType = null; conversationId = null; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {
         const body = root.querySelector('.bb-body'), top = body.scrollTop;
@@ -493,6 +593,7 @@ export function refreshPanel(reason = 'update') {
 export function openConversation(id) {
     if (!getSettings().enabled) return;
     openPanel();
+    if (conversationId !== id) attachmentType = null;
     conversationId = id; page = 'conversation'; render();
     const body = root.querySelector('.bb-body'); body.scrollTop = body.scrollHeight;
     root.querySelector('[data-bb-action="back"]')?.focus({ preventScroll: true });

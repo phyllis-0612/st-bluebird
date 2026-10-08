@@ -1,6 +1,6 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.3.0';
-import { activeSwipe, buildState, parseFloor, replaceTransferLine } from './messages.js?v=0.3.0';
+import { ctx, getSettings } from './settings.js?v=0.4.0';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.4.0';
 
 let state = buildState([]);
 let owner = null;
@@ -11,7 +11,8 @@ let writing = false;
 const listeners = new Set();
 
 function chatKey(context) {
-    return JSON.stringify([context.groupId ?? null, context.characters?.[context.characterId]?.avatar ?? context.characterId ?? null,
+    const group = context.groupId !== undefined && context.groupId !== null && context.groupId !== '';
+    return JSON.stringify([context.groupId ?? null, group ? null : context.characters?.[context.characterId]?.avatar ?? context.characterId ?? null,
         context.chatId ?? context.getCurrentChatId?.() ?? null]);
 }
 
@@ -30,6 +31,7 @@ function metadata(context = ctx()) {
     const data = meta.bluebird;
     if (!data.lastSeen || typeof data.lastSeen !== 'object' || Array.isArray(data.lastSeen)) data.lastSeen = {};
     data.version = 1;
+    if (!Array.isArray(data.pending)) data.pending = [];
     return data;
 }
 
@@ -125,6 +127,24 @@ export function rebuildChatState(reason = 'update') {
         if (floor.extra.bluebird.swipeId !== swipeId) { floor.extra.bluebird.swipeId = swipeId; newIdentities = true; }
     }
     state = buildState(chat, { thinkTags, lastSeen: context.chatMetadata?.bluebird?.lastSeen || {} });
+    const data = metadata(context);
+    for (const name of storyContacts(context)) {
+        const id = `name:${name.normalize('NFC')}`;
+        if (!state.conversations.some(c => c.id === id)) state.conversations.push({ id, name, members: [name], messages: [], unread: 0 });
+    }
+    for (const record of data?.pending || []) {
+        if (!record || typeof record.id !== 'string' || !Array.isArray(record.fields) || typeof record.chatName !== 'string') continue;
+        const parsed = parseFloor(`<bb-phone source="phone" chat="${escapeAttribute(record.chatName)}">\n${serializeFields(record.fields)}\n</bb-phone>`, { thinkTags }).messages[0];
+        if (!parsed) continue;
+        const id = `name:${record.chatName.normalize('NFC')}`;
+        let conversation = state.conversations.find(c => c.id === id);
+        if (!conversation) { conversation = { id, name: record.chatName, members: [record.chatName], messages: [], unread: 0 }; state.conversations.push(conversation); }
+        const message = { ...parsed, id: record.id, conversationId: id, pending: true, floorIndex: null, order: state.byId.size,
+            unread: !parsed.isSelf && !(data.lastSeen[id] || []).includes(record.id) };
+        conversation.messages.push(message); conversation.unread += Number(message.unread);
+        state.unread += Number(message.unread); state.byId.set(record.id, message);
+    }
+    state.conversations.sort((a, b) => (b.messages.at(-1)?.order ?? -1) - (a.messages.at(-1)?.order ?? -1));
     if (newIdentities) saveFloorIdentities(saved);
     emit(changed ? 'chat' : reason);
     return state;
@@ -153,6 +173,16 @@ export async function processTransfer(messageId, status) {
     rebuildChatState('before-write');
     const context = ctx(), saved = capture(context);
     const target = state.byId.get(messageId);
+    if (target?.pending) {
+        const record = metadata(context).pending.find(r => r.id === messageId);
+        if (!record || target.type !== 'transfer' || target.isSelf || target.status || !['accepted', 'returned'].includes(status)) throw new Error('这笔转账已经处理，或不支持此操作');
+        const fields = [...record.fields]; while (fields.length < 4) fields.push(''); fields[4] = status;
+        const before = record.fields; record.fields = fields; writing = true;
+        try { await context.saveChat(); if (matches(saved)) rebuildChatState('transfer'); }
+        catch (error) { if (record.fields === fields) record.fields = before; if (matches(saved)) rebuildChatState('transfer'); throw error; }
+        finally { writing = false; }
+        return;
+    }
     if (!target || !context.chat.includes(target.floorRef)) throw new Error('这条消息已不存在');
     if (typeof context.saveChat !== 'function') throw new Error('当前酒馆缺少保存聊天接口');
     const floor = target.floorRef;
@@ -195,3 +225,70 @@ export async function processTransfer(messageId, status) {
 
 export function currentChatMatches(saved) { return matches(saved); }
 export function captureCurrentChat() { return capture(); }
+
+export function getPendingMessages() { return metadata()?.pending || []; }
+
+export async function appendPendingMessages(chatName, fieldsList, saved = capture(), guard = () => true) {
+    if (!matches(saved) || !guard()) throw new Error('聊天已改变，本次回复已停止');
+    if (writing) throw new Error('正在保存，请稍等后重试');
+    const context = ctx(), data = metadata(context);
+    if (!data || typeof context.saveChat !== 'function') throw new Error('请先打开一个可保存的角色聊天');
+    const records = fieldsList.map(fields => ({ id: `pending:${newId()}`, chatName, fields: [...fields], createdAt: Date.now() }));
+    const ids = new Set(records.map(r => r.id));
+    data.pending.push(...records); writing = true;
+    try { await context.saveChat(); }
+    catch (error) { data.pending = data.pending.filter(r => !ids.has(r.id)); throw error; }
+    finally { writing = false; if (matches(saved)) rebuildChatState('pending'); }
+    return records;
+}
+
+/** 同一份存档里同时写入文本并移除快照；后来发的消息继续留在暂存区。 */
+export async function landPendingMessages(batch, newFloorIndex) {
+    if (!batch || !matches(batch.owner) || writing) return false;
+    const context = ctx(), target = batch.floor;
+    if (context.chat[newFloorIndex - 1] !== target || context.chat[newFloorIndex]?.is_user
+        || activeSwipeKey(target) !== batch.variant || target.mes !== batch.text) return false;
+    const data = metadata(context), ids = new Set(batch.records.map(r => r.id));
+    const records = data.pending.filter(r => ids.has(r.id));
+    if (!records.length) return false;
+    const groups = [];
+    for (const record of records) {
+        let group = groups.at(-1);
+        if (group?.name !== record.chatName) { group = { name: record.chatName, records: [] }; groups.push(group); }
+        group.records.push(record);
+    }
+    const blocks = groups.map(g => `<bb-phone source="phone" chat="${escapeAttribute(g.name)}">\n${g.records.map(r => serializeFields(r.fields)).join('\n')}\n</bb-phone>`).join('\n');
+    const swipe = activeSwipe(target), info = target.swipe_info?.[swipe];
+    const before = { text: target.mes, swipe: target.swipes?.[swipe], pending: data.pending, seen: data.lastSeen,
+        display: target.extra?.display_text, infoDisplay: info?.extra?.display_text };
+    const after = `${target.mes}\n${blocks}`;
+    target.mes = after;
+    if (Array.isArray(target.swipes)) target.swipes[swipe] = after;
+    if (target.extra) delete target.extra.display_text;
+    if (info?.extra) delete info.extra.display_text;
+    data.pending = data.pending.filter(r => !ids.has(r.id)); writing = true;
+    // 将暂存消息已读状态迁到落楼后的身份，避免凭空变成未读。
+    rebuildChatState('landing');
+    const added = state.floors.get(newFloorIndex - 1)?.filter(m => m.start >= before.text.length) || [];
+    data.lastSeen = { ...before.seen };
+    added.forEach((m, i) => { const old = records[i]; if (old && (before.seen[m.conversationId] || []).includes(old.id)) {
+        data.lastSeen[m.conversationId] = [...(data.lastSeen[m.conversationId] || []), m.id];
+    } });
+    try {
+        await context.saveChat();
+    } catch (error) {
+        if (target.mes === after) target.mes = before.text;
+        if (target.swipes?.[swipe] === after) target.swipes[swipe] = before.swipe;
+        data.pending = before.pending; data.lastSeen = before.seen;
+        if (target.extra && before.display !== undefined) target.extra.display_text = before.display;
+        if (info?.extra && before.infoDisplay !== undefined) info.extra.display_text = before.infoDisplay;
+        if (matches(batch.owner)) rebuildChatState('landing-failed');
+        throw error;
+    } finally { writing = false; }
+    if (matches(batch.owner)) {
+        try { context.updateMessageBlock?.(newFloorIndex - 1, target); }
+        catch (error) { console.error('[青鸟] 手机聊天已保存，楼层显示刷新失败', error); }
+        rebuildChatState('landed');
+    }
+    return true;
+}

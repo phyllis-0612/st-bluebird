@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { parseFloor, serializeFields } from '../src/messages.js';
+import { parseFloor, serializeFields, storyContacts } from '../src/messages.js';
 const source = n => fs.readFileSync(new URL(`../src/${n}.js`, import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
 const phone = '<bb-phone>陆|text|到家了吗</bb-phone>';
 const floor = mes => ({ mes, is_user: false });
@@ -13,7 +13,7 @@ function harness() {
         eventTypes: Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_CHANGED'].map(n => [n, n])),
         eventSource: { on(n, fn) { events.set(n, fn); } }, setExtensionPrompt(...args) { calls.push(args); } };
     const scope = vm.createContext({ SillyTavern: { getContext: () => c }, window: { matchMedia: () => ({ matches: false }) },
-        document: { querySelectorAll: () => [] }, parseFloor, serializeFields,
+        document: { querySelectorAll: () => [] }, parseFloor, serializeFields, storyContacts, preparePendingGeneration() {},
         captureCurrentChat: () => ({ chat: c.chat, id: c.chatId }), currentChatMatches: o => o.chat === c.chat && o.id === c.chatId });
     vm.runInContext(source('settings') + '\n' + source('proactive'), scope);
     const settings = scope.getSettings();

@@ -1,7 +1,9 @@
 // 第三段：只给主线生成注入规则，不另发请求，也不提前扣冷却。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.3.0';
-import { parseFloor, serializeFields } from './messages.js?v=0.3.0';
-import { captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.3.0';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.4.0';
+import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.4.0';
+import { captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.4.0';
+
+import { preparePendingGeneration } from './phone-chat.js?v=0.4.0';
 
 export const PROMPT_KEY = 'bluebird-phone';
 export const INTERCEPTOR_KEY = 'bluebirdGenerationInterceptor';
@@ -10,17 +12,7 @@ let initialized = false;
 
 /** 第五段之前只使用当前角色卡；群聊按成员头像对应角色，不能把编号当头像。 */
 export function getStoryContacts(context = ctx()) {
-    const characters = context.characters || [];
-    let cards;
-    if (context.groupId !== undefined && context.groupId !== null && context.groupId !== '') {
-        const group = context.groups?.find(g => String(g.id) === String(context.groupId));
-        const disabled = new Set(group?.disabled_members || []);
-        cards = (group?.members || []).filter(avatar => !disabled.has(avatar))
-            .map(avatar => characters.find(card => card.avatar === avatar));
-    } else {
-        cards = [characters[context.characterId]];
-    }
-    return [...new Set(cards.map(card => card?.name?.trim()).filter(Boolean))];
+    return storyContacts(context);
 }
 
 /** 原文含隐藏楼层也计数。只认 AI 楼层中有效的主线来信，手机暂存/思考不重置冷却。 */
@@ -74,6 +66,7 @@ function clearPrompt() {
 /** 酒馆在用户消息入楼、regenerate 删除目标之后调用；读取原聊天，避免正则隐藏导致漏算。 */
 export function prepareProactiveGeneration(_chat, _contextSize, _abort, type) {
     clearPrompt();
+    preparePendingGeneration(type);
     if (![undefined, 'normal', 'regenerate', 'swipe', 'continue'].includes(type)) return;
     const context = ctx(), settings = getSettings();
     const prompt = buildProactivePrompt(context, settings, type);

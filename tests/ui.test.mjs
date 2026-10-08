@@ -20,26 +20,28 @@ function panelHarness() {
     const body = document.createElement('main'); body.className = 'bb-body'; phone.append(body);
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
+    const sent = [], status = { phase: 'idle' };
     const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
-        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情'], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情', '陆'], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0 }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
-        scrollToFloor() {}, processTransfer() {}, toastr: { info() {}, error() {} } });
+        scrollToFloor() {}, processTransfer() {}, getPhoneStatus: () => status, isGenerationBusy: () => false,
+        captureCurrentChat: () => ({}), currentChatMatches: () => true, sendPhoneMessage: async (...args) => { sent.push(args); }, retryPhoneReply() {}, toastr: { info() {}, error() {} } });
     vm.runInContext(source('entry-controls') + '\n' + source('panel') + '\nroot = rootNode;', scope);
-    return { document, root, scope, settings, reads: () => readCalls, state: () => state,
+    return { document, root, scope, settings, sent, status, reads: () => readCalls, state: () => state,
         setState(s) { state = s; }, click: async button => scope.onClick({ target: button }) };
 }
 
-test('list and conversation show all five cards, outgoing bubble, disabled composer and floor link', async () => {
+test('list and conversation show all five cards, outgoing bubble, enabled composer and floor link', async () => {
     const h = panelHarness(); h.scope.openPanel();
     assert.equal(h.root.querySelector('.bb-unread-pill').textContent, '5');
     await h.click(h.root.querySelector('[data-bb-conversation]'));
     assert.equal(h.root.querySelectorAll('.bb-message').length, 6);
     assert.equal(h.root.querySelectorAll('.bb-card').length, 4);
     assert.equal(h.root.querySelectorAll('.is-self').length, 1);
-    assert.equal(h.root.querySelector('.bb-compose-input').disabled, true);
+    assert.equal(h.root.querySelector('.bb-compose-input').disabled, false);
     assert.equal(h.root.querySelectorAll('[data-bb-transfer]').length, 2);
     assert.equal(h.root.querySelector('[data-bb-floor-message]').textContent, '第 1 楼 ↗');
     assert.equal(h.root.querySelector('.bb-presence').textContent, '最近记录：与你同场');
@@ -207,4 +209,25 @@ test('proactive settings persist button choices and numeric values, reject inval
     await h.click(h.root.querySelector('[data-bb-page="settings"]'));
     assert.equal(h.root.querySelector('[data-bb-setting="proactiveEnabled"]').checked, false);
     assert.equal(h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]').find(n => n.value === 'clingy').checked, true);
+});
+
+test('phone composer preserves drafts on refresh, sends text and transfer, clears only successfully sent fields', async () => {
+    const h = panelHarness(); h.scope.openConversation('name:陆');
+    const text = h.root.querySelector('.bb-compose-input'); text.value = '正在写的消息'; h.scope.onInput({ target: text });
+    h.scope.refreshPanel(); assert.equal(h.root.querySelector('.bb-compose-input').value, '正在写的消息');
+    await h.click(h.root.querySelector('[data-bb-action="send-text"]'));
+    assert.deepEqual(h.sent[0], ['陆', 'text', '正在写的消息', '']); assert.equal(h.root.querySelector('.bb-compose-input').value, '');
+    await h.click(h.root.querySelector('[data-bb-action="attachments"]')); assert.equal(h.root.querySelectorAll('[data-bb-attachment]').length, 4);
+    await h.click(h.root.querySelector('[data-bb-attachment="transfer"]'));
+    for (const [key, value] of [['content', '12.50'], ['note', '车费']]) { const input = h.root.querySelector(`[data-bb-draft="${key}"]`); input.value = value; h.scope.onInput({ target: input }); }
+    await h.click(h.root.querySelector('[data-bb-action="send-attachment"]'));
+    assert.deepEqual(h.sent[1], ['陆', 'transfer', '12.50', '车费']); assert.equal(h.root.querySelector('.bb-attachment-form'), null);
+});
+
+test('reply status and retry affordance survive reload with pending user messages', () => {
+    const h = panelHarness(), state = makeState();
+    state.conversations[0].messages.push({ sender: '我', type: 'text', content: '暂存问题', id: 'pending:test', isSelf: true, pending: true, floorIndex: null });
+    h.setState(state); h.scope.openConversation('name:陆');
+    assert.match(h.root.querySelector('.bb-phone-status').textContent, /待回复/); assert.ok(h.root.querySelector('[data-bb-action="retry-reply"]'));
+    h.status.phase = 'typing'; h.scope.refreshPanel(); assert.match(h.root.querySelector('.bb-phone-status').textContent, /正在输入/);
 });

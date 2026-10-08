@@ -611,3 +611,18 @@ html.bb-open body {
         transition: none !important;
     }
 }
+
+/* 第四段手机输入，继承青鸟配色。 */
+#bluebird-panel .bb-compose-wrap { position: sticky; bottom: 0; background: var(--bb-bg); }
+#bluebird-panel .bb-compose-wrap .bb-composer { position: static; }
+#bluebird-panel .bb-compose-send { flex: none; min-width: 56px; min-height: 44px; border-radius: 12px; padding: 9px 12px; background: var(--bb-accent); color: var(--bb-accent-ink); font-size: 14px; }
+#bluebird-panel .bb-compose-send:disabled { opacity: .5; cursor: default; }
+#bluebird-panel .bb-attachments { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px 16px; border-top: 1px solid var(--bb-line); }
+#bluebird-panel .bb-attachment-option { min-height: 52px; border: 1px solid var(--bb-line); border-radius: 12px; color: var(--bb-accent-strong); font-size: 14px; }
+#bluebird-panel .bb-attachment-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--bb-line); }
+#bluebird-panel .bb-attachment-form > strong, #bluebird-panel .bb-attachment-form > input, #bluebird-panel .bb-attachment-form > .bb-switch-hint { flex-basis: 100%; }
+#bluebird-panel .bb-phone-status { margin: 0; padding: 8px 16px; font-size: 12px; line-height: 1.6; color: var(--bb-sub); }
+#bluebird-panel .bb-phone-status.is-error { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#bluebird-panel .bb-reply-retry { min-height: 44px; padding: 8px 12px; border-radius: 10px; color: var(--bb-accent-strong); background: var(--bb-accent-soft); font-size: 13px; }
+#bluebird-panel .bb-contact-row { display: flex; flex-direction: column; width: 100%; text-align: left; min-height: 64px; }
+#bluebird-panel .bb-phone-settings { display: grid; gap: 18px; }
