@@ -2,16 +2,16 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.5.0';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.5.0';
-import { createEntryModeControl } from './entry-controls.js?v=0.5.0';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.0';
-import { scrollToFloor } from './chat-integration.js?v=0.5.0';
-import { fingerprint } from './messages.js?v=0.5.0';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.0';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.0';
-import { getStoryContacts } from './proactive.js?v=0.5.0';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.0';
+import { icons } from './icons.js?v=0.5.1';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.5.1';
+import { createEntryModeControl } from './entry-controls.js?v=0.5.1';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.1';
+import { scrollToFloor } from './chat-integration.js?v=0.5.1';
+import { fingerprint } from './messages.js?v=0.5.1';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.1';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.1';
+import { getStoryContacts } from './proactive.js?v=0.5.1';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.1';
 
 let root = null;
 let page = 'list';

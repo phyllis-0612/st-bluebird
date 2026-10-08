@@ -1,7 +1,7 @@
 // 第五段：联系人目录只存来源引用，世界书正文始终按需读取。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.5.0';
-import { world_info } from '../../../world-info.js';
-import { storyContacts } from './messages.js?v=0.5.0';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.5.1';
+import { world_info } from '../../../../world-info.js';
+import { storyContacts } from './messages.js?v=0.5.1';
 
 const CONTACT_LEVELS = ['restrained', 'normal', 'clingy'];
 const filename = avatar => String(avatar || '').replace(/\.[^/.]+$/, '');
