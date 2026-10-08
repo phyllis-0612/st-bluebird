@@ -564,6 +564,12 @@ html.bb-open body {
 #bluebird-panel .bb-card-icon { flex: none; color: var(--bb-accent); }
 #bluebird-panel .bb-card-text { margin: 9px 0 4px; font-size: 14px; white-space: pre-wrap; }
 #bluebird-panel .bb-card-caption { font-size: 11px; color: var(--bb-sub); }
+#bluebird-panel .bb-voice-play { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; text-align: left; }
+#bluebird-panel .bb-voice-play strong { flex: 1; font-size: 14px; font-weight: 600; }
+#bluebird-panel .bb-voice-play-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--bb-accent); color: var(--bb-accent-ink); }
+#bluebird-panel .bb-voice-transcript { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bb-line); }
+#bluebird-panel .bb-voice-transcript[hidden] { display: none; }
+#bluebird-panel .bb-voice-transcript .bb-card-text { margin-top: 4px; }
 #bluebird-panel .bb-card-transfer { background: var(--bb-accent-soft); }
 #bluebird-panel .bb-card-heading .bb-transfer-amount { font-size: 23px; font-weight: 600; }
 #bluebird-panel .bb-transfer-actions { display: flex; gap: 8px; margin-top: 12px; border-top: 1px solid var(--bb-line); padding-top: 8px; }

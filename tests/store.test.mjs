@@ -135,3 +135,32 @@ test('save failure restores the old variant without overwriting a newly selected
     await assert.rejects(h.scope.processTransfer(h.transfer().id, 'accepted'));
     assert.equal(h.floor.mes, '备用'); assert.equal(h.floor.swipes[0], original);
 });
+
+test('an unpaired start event heals when native generation controls are idle', async () => {
+    const h = harness(); h.rebuild();
+    let clock = 1000;
+    const stop = { style: { display: 'none' } };
+    h.scope.Date = class extends Date { static now() { return clock; } };
+    h.scope.document = { body: { dataset: {} }, getElementById: () => stop };
+    h.scope.getComputedStyle = node => node.style;
+    h.scope.setGenerationActive(true);
+    // 请求准备阶段仍保护写回，但不能无限挂着。
+    await assert.rejects(h.scope.processTransfer(h.transfer().id, 'accepted'), /生成结束/);
+    clock += 2000;
+    await h.scope.processTransfer(h.transfer().id, 'accepted');
+    assert.match(h.floor.mes, /accepted/);
+    assert.equal(h.scope.isGenerationBusy(), false);
+});
+
+test('native busy signals protect transfers even if a start event was missed', async () => {
+    const h = harness(); h.rebuild();
+    const body = { dataset: { generating: 'true' } }, stop = { style: { display: 'none' } };
+    h.scope.document = { body, getElementById: () => stop };
+    h.scope.getComputedStyle = node => node.style;
+    await assert.rejects(h.scope.processTransfer(h.transfer().id, 'returned'), /生成结束/);
+    delete body.dataset.generating; stop.style.display = 'flex';
+    await assert.rejects(h.scope.processTransfer(h.transfer().id, 'returned'), /生成结束/);
+    stop.style.display = 'none';
+    await h.scope.processTransfer(h.transfer().id, 'returned');
+    assert.match(h.floor.mes, /returned/);
+});

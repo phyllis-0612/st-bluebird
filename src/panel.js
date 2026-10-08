@@ -2,11 +2,12 @@
 // 手机端全屏面板。
 // 第二段：读取楼层消息、展示会话和卡片；主动输入随后开放。
 
-import { icons } from './icons.js?v=0.2.0';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.2.0';
-import { createEntryModeControl } from './entry-controls.js?v=0.2.0';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.2.0';
-import { scrollToFloor } from './chat-integration.js?v=0.2.0';
+import { icons } from './icons.js?v=0.2.1';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.2.1';
+import { createEntryModeControl } from './entry-controls.js?v=0.2.1';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.2.1';
+import { scrollToFloor } from './chat-integration.js?v=0.2.1';
+import { fingerprint } from './messages.js?v=0.2.1';
 
 let root = null;
 let page = 'list';
@@ -16,6 +17,7 @@ const backgroundNodes = new Map();
 let backgroundObserver = null;
 let conversationId = null;
 let transferPending = false;
+const expandedVoiceIds = new Set();
 
 /** 全屏时隔离背后的酒馆控件，关闭时恢复原来的 inert 状态。 */
 function lockBackground() {
@@ -98,7 +100,7 @@ function renderList() {
 
 function messagePreview(message) {
     if (message.type === 'transfer') return `[转账] ¥${message.content}${message.note ? ' · ' + message.note : ''}`;
-    if (message.type === 'voice') return `[语音] ${message.content}`;
+    if (message.type === 'voice') return getSettings().voiceEnabled ? '[语音消息]' : message.content;
     if (message.type === 'image') return `[图片] ${message.content}`;
     if (message.type === 'location') return `[位置] ${message.content}`;
     return message.content;
@@ -117,9 +119,24 @@ function renderMessage(message) {
     const bubble = el('div', 'bb-bubble' + (message.type !== 'text' ? ` bb-card bb-card-${message.type}` : ''));
     if (message.type === 'text') bubble.textContent = message.content;
     else if (message.type === 'voice') {
-        const heading = el('div', 'bb-card-heading');
-        heading.append(cardIcon('voice'), el('strong', '', '语音消息'), el('span', 'bb-card-caption', '文字版'));
-        bubble.append(heading, el('p', 'bb-card-text', message.content));
+        if (!getSettings().voiceEnabled) {
+            bubble.className = 'bb-bubble bb-voice-text';
+            bubble.textContent = message.content;
+        } else {
+            const expanded = expandedVoiceIds.has(message.id);
+            const transcript = el('div', 'bb-voice-transcript');
+            transcript.id = `bb-voice-${fingerprint(message.id)}`;
+            transcript.hidden = !expanded;
+            transcript.append(el('span', 'bb-card-caption', '转文字'), el('p', 'bb-card-text', message.content));
+            const play = el('button', 'bb-voice-play'); play.type = 'button';
+            play.dataset.bbVoice = message.id;
+            play.setAttribute('aria-label', '展开语音消息的文字');
+            play.setAttribute('aria-expanded', String(expanded));
+            play.setAttribute('aria-controls', transcript.id);
+            const icon = el('span', 'bb-voice-play-icon'); icon.innerHTML = icons.play(20);
+            play.append(icon, el('strong', '', '语音消息'), cardIcon('voice'));
+            bubble.append(play, transcript);
+        }
     } else if (message.type === 'image') {
         const heading = el('div', 'bb-card-heading'); heading.append(cardIcon('image'), el('strong', '', '图片'));
         bubble.append(heading, el('p', 'bb-card-text', message.content), el('span', 'bb-card-caption', '画面描述'));
@@ -229,7 +246,14 @@ function renderSettings() {
     const tagInput = el('input', 'bb-settings-input'); tagInput.type = 'text'; tagInput.value = s.thinkTags.join(', ');
     tagInput.dataset.bbSetting = 'thinkTags'; tagInput.autocapitalize = 'off'; tagInput.spellcheck = false;
     thinking.append(tagInput);
-    wrap.append(themeField, entryField, notice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    const voice = el('label', 'bb-switch');
+    const voiceText = el('span', 'bb-switch-text');
+    voiceText.append(el('span', 'bb-switch-title', '语音消息模式'),
+        el('span', 'bb-switch-hint', '开启后点击语音卡片展开文字，关闭后直接显示文字。声音播放随后开放。'));
+    const voiceToggle = el('input', 'bb-toggle'); voiceToggle.type = 'checkbox';
+    voiceToggle.checked = s.voiceEnabled; voiceToggle.dataset.bbSetting = 'voiceEnabled';
+    voice.append(voiceText, voiceToggle);
+    wrap.append(themeField, entryField, notice, voice, thinking, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
@@ -263,6 +287,16 @@ async function onClick(event) {
     }
     if (btn.dataset.bbAction === 'back') { page = 'list'; conversationId = null; render(); return; }
     if (btn.dataset.bbConversation) { openConversation(btn.dataset.bbConversation); return; }
+    if (btn.dataset.bbVoice) {
+        const id = btn.dataset.bbVoice;
+        const message = getChatState().byId.get(id);
+        if (!message || message.type !== 'voice') { refreshPanel(); return; }
+        expandedVoiceIds.add(id);
+        const transcript = btn.closest('.bb-card-voice')?.querySelector('.bb-voice-transcript');
+        if (transcript) transcript.hidden = false;
+        btn.setAttribute('aria-expanded', 'true');
+        return;
+    }
     if (btn.dataset.bbFloorMessage) {
         const message = getChatState().byId.get(btn.dataset.bbFloorMessage);
         if (!message) { toastr.info('这条消息已经改变，请重新打开会话'); return; }
@@ -296,6 +330,9 @@ function onChange(event) {
         applyThemeEverywhere();
     } else if (key === 'inlineNotice') {
         setSetting('inlineNotice', input.checked);
+    } else if (key === 'voiceEnabled') {
+        expandedVoiceIds.clear();
+        setSetting('voiceEnabled', input.checked);
     } else if (key === 'thinkTags') {
         setSetting('thinkTags', input.value.split(/[,，\s]+/).map(s => s.trim().toLowerCase()).filter(s => /^[a-z][a-z0-9_-]*$/.test(s)));
     }
@@ -389,6 +426,7 @@ export function togglePanel() {
 
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
+    if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
     if (reason === 'chat') { conversationId = null; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {

@@ -1,7 +1,7 @@
 // 标签隐藏发生在显示管线；提醒在渲染完成后用安全 DOM 添加。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.2.0';
-import { hidePhoneTags } from './messages.js?v=0.2.0';
-import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.2.0';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.2.1';
+import { hidePhoneTags } from './messages.js?v=0.2.1';
+import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.2.1';
 
 const RULES = [
     { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa001', scriptName: '青鸟 · 隐藏手机消息（显示）',
@@ -132,7 +132,12 @@ export function initChatIntegration(onOpenConversation) {
     for (const name of ['CHAT_LOADED', 'MESSAGE_SENT', 'MESSAGE_RECEIVED', 'MESSAGE_EDITED', 'MESSAGE_UPDATED',
         'MESSAGE_DELETED', 'MESSAGE_SWIPED', 'MESSAGE_SWIPE_DELETED', 'MORE_MESSAGES_LOADED']) on(name, scheduleRefresh);
     for (const name of ['USER_MESSAGE_RENDERED', 'CHARACTER_MESSAGE_RENDERED']) on(name, scheduleRefresh);
-    on('GENERATION_STARTED', () => setGenerationActive(true));
+    on('GENERATION_STARTED', (type, options = {}, dryRun = false) => {
+        // 提示词/Token 预演也会发开始事件，通常不会发结束事件。
+        // 后台 quiet 回复不修改正文楼层，不建立正文写回锁。
+        if (dryRun || (type === 'quiet' && !options?.quietToLoud)) return;
+        setGenerationActive(true);
+    });
     for (const name of ['GENERATION_ENDED', 'GENERATION_STOPPED']) on(name, () => { setGenerationActive(false); scheduleRefresh(); });
     for (const name of ['APP_READY', 'APP_INITIALIZED']) on(name, () => {
         installFormatterHook(); bindChatDOM(); rebuildChatState(); reformatTaggedFloors();

@@ -1,11 +1,12 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.2.0';
-import { activeSwipe, buildState, parseFloor, replaceTransferLine } from './messages.js?v=0.2.0';
+import { ctx, getSettings } from './settings.js?v=0.2.1';
+import { activeSwipe, buildState, parseFloor, replaceTransferLine } from './messages.js?v=0.2.1';
 
 let state = buildState([]);
 let owner = null;
 let identitySaveTimer = null;
 let generationActive = false;
+let generationStartedAt = 0;
 let writing = false;
 const listeners = new Set();
 
@@ -40,7 +41,27 @@ export function onChatStateChanged(listener) {
 }
 
 export function getChatState() { return state; }
-export function setGenerationActive(value) { generationActive = value; }
+export function setGenerationActive(value) {
+    generationActive = Boolean(value);
+    generationStartedAt = generationActive ? Date.now() : 0;
+}
+
+/** 开始事件可能没有对应结束事件；实际忙碌以酒馆当前控件状态为准。 */
+export function isGenerationBusy() {
+    const doc = globalThis.document;
+    const flag = doc?.body?.dataset?.generating;
+    const stop = doc?.getElementById?.('mes_stop');
+    const style = stop && (typeof globalThis.getComputedStyle === 'function' ? getComputedStyle(stop) : stop.style);
+    if (flag === 'true' || (stop && !stop.hidden && style?.display && style.display !== 'none')) return true;
+    if (stop || flag === 'false') {
+        // 真正生成刚开始时，停止按钮还没显示。短暂保护请求准备阶段。
+        if (generationActive && Date.now() - generationStartedAt < 1500) return true;
+        setGenerationActive(false);
+        return false;
+    }
+    // 无标准酒馆控件的环境，保留事件保护。
+    return generationActive;
+}
 
 function newId() {
     return globalThis.crypto?.randomUUID?.() || `bb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -52,7 +73,7 @@ function saveFloorIdentities(saved) {
         identitySaveTimer = null;
         if (!matches(saved)) return;
         // 不在流式生成中保存半成品；结束事件会重新安排。
-        if (generationActive || writing) { saveFloorIdentities(saved); return; }
+        if (isGenerationBusy() || writing) { saveFloorIdentities(saved); return; }
         try { await ctx().saveChat?.(); }
         catch (error) { console.error('[青鸟] 保存消息标识失败', error); }
     }, 600);
@@ -127,8 +148,8 @@ export function markConversationRead(conversationId) {
 
 export async function processTransfer(messageId, status) {
     if (writing) throw new Error('正在保存，请稍等');
-    if (generationActive) throw new Error('请等这一轮剧情生成结束后再处理转账');
     if (!matches(owner)) { rebuildChatState(); throw new Error('聊天已切换，请重新打开转账'); }
+    if (isGenerationBusy()) throw new Error('请等这一轮剧情生成结束后再处理转账');
     rebuildChatState('before-write');
     const context = ctx(), saved = capture(context);
     const target = state.byId.get(messageId);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { icons } from '../src/icons.js';
-import { buildState, hidePhoneTags } from '../src/messages.js';
+import { buildState, hidePhoneTags, fingerprint } from '../src/messages.js';
 import { makeDOM } from './dom-helper.mjs';
 
 const source = name => fs.readFileSync(new URL(`../src/${name}.js`, import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
@@ -20,9 +20,9 @@ function panelHarness() {
     const body = document.createElement('main'); body.className = 'bb-body'; phone.append(body);
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
-    const settings = { enabled: true, inlineNotice: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'] };
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'] };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
-        rootNode: root, icons, VERSION: '0.2.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        rootNode: root, icons, fingerprint, VERSION: '0.2.1', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0 }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
@@ -72,7 +72,7 @@ function integrationHarness() {
     const chat = document.createElement('div'); chat.id = 'chat'; document.body.append(chat);
     const floor = document.createElement('div'); floor.className = 'mes'; floor.setAttribute('mesid', '0'); chat.append(floor);
     const text = document.createElement('div'); text.className = 'mes_text'; floor.append(text);
-    const state = makeState(), events = new Map(), hooks = [], frames = [], settingListeners = [], observers = [];
+    const state = makeState(), events = new Map(), hooks = [], frames = [], settingListeners = [], observers = [], generationSignals = [];
     const settings = { enabled: true, inlineNotice: true };
     let settingsSaves = 0, opened = null, rebuilds = 0;
     const data = { extensionSettings: { regex: [{ id: 'user', scriptName: '青鸟之外的用户脚本', findRegex: 'keep' }] },
@@ -82,7 +82,7 @@ function integrationHarness() {
         eventTypes: Object.fromEntries(['CHAT_CHANGED', 'MESSAGE_SWIPED', 'GENERATION_STARTED', 'GENERATION_ENDED', 'USER_MESSAGE_RENDERED', 'APP_READY'].map(n => [n, n])),
         eventSource: { on(name, fn) { events.set(name, fn); } } };
     const scope = vm.createContext({ document, HTMLElement: Element, ctx: () => data, hidePhoneTags,
-        getSettings: () => settings, getChatState: () => state, rebuildChatState() { rebuilds++; }, setGenerationActive() {},
+        getSettings: () => settings, getChatState: () => state, rebuildChatState() { rebuilds++; }, setGenerationActive: value => generationSignals.push(value),
         onChatStateChanged() {}, onSettingChanged: fn => settingListeners.push(fn),
         requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, setTimeout: fn => { frames.push(fn); return frames.length; },
         MutationObserver: class { constructor(fn) { this.fn = fn; observers.push(this); } observe() {} disconnect() {} },
@@ -91,7 +91,7 @@ function integrationHarness() {
     vm.runInContext(source('chat-integration'), scope);
     const install = () => scope.initChatIntegration(id => { opened = id; });
     return { document, floor, text, state, data, scope, settings, settingListeners, events, hooks, frames, observers,
-        install, stats: () => ({ settingsSaves, opened, rebuilds }) };
+        install, generationSignals, stats: () => ({ settingsSaves, opened, rebuilds }) };
 }
 
 test('global regex installation is idempotent, preserves user scripts, and uses display/prompt flags', () => {
@@ -142,4 +142,47 @@ test('floor jump uses the current floor object and refuses deleted source floors
     await h.scope.scrollToFloor(message); assert.equal(h.floor.scrolled.block, 'center');
     h.data.chat.length = 0;
     await assert.rejects(h.scope.scrollToFloor(message), /已经删除/);
+});
+
+test('voice transcript is collapsed, expands on click and survives a normal refresh', async () => {
+    const h = panelHarness(); h.scope.openPanel();
+    assert.equal(h.scope.messagePreview({ type: 'voice', content: '秘密内容' }), '[语音消息]');
+    h.scope.openConversation('name:陆');
+    const play = h.root.querySelector('[data-bb-voice]');
+    assert.equal(play.getAttribute('aria-expanded'), 'false');
+    assert.equal(h.root.querySelector('.bb-voice-transcript').hidden, true);
+    await h.click(play);
+    assert.equal(h.root.querySelector('.bb-voice-transcript').hidden, false);
+    assert.equal(play.getAttribute('aria-expanded'), 'true');
+    assert.equal(h.root.querySelector('.bb-voice-transcript .bb-card-text').textContent, '听我说');
+    h.scope.refreshPanel();
+    assert.equal(h.root.querySelector('.bb-voice-transcript').hidden, false);
+});
+
+test('voice mode off uses a text bubble; re-enabling or changing chat resets expansion', async () => {
+    const h = panelHarness(); h.scope.openConversation('name:陆');
+    await h.click(h.root.querySelector('[data-bb-voice]'));
+    h.settings.voiceEnabled = false; h.scope.refreshPanel('voice-mode');
+    assert.equal(h.root.querySelector('[data-bb-voice]'), null);
+    assert.equal(h.root.querySelector('.bb-voice-text').textContent, '听我说');
+    assert.equal(h.scope.messagePreview({ type: 'voice', content: '秘密内容' }), '秘密内容');
+    h.settings.voiceEnabled = true; h.scope.refreshPanel('voice-mode');
+    assert.equal(h.root.querySelector('.bb-voice-transcript').hidden, true);
+    await h.click(h.root.querySelector('[data-bb-voice]'));
+    h.scope.refreshPanel('chat'); h.scope.openConversation('name:陆');
+    assert.equal(h.root.querySelector('.bb-voice-transcript').hidden, true);
+});
+
+test('prompt dry runs and quiet background calls cannot latch the generation lock', () => {
+    const h = integrationHarness(); h.install();
+    const started = h.events.get('GENERATION_STARTED');
+    started('normal', {}, true); started('quiet', {}, false);
+    assert.deepEqual(h.generationSignals, []);
+    started('normal', {}, false);
+    started('normal', {}, true); // 预演也不能解除正在进行的真实生成。
+    assert.deepEqual(h.generationSignals, [true]);
+    h.events.get('GENERATION_ENDED')();
+    assert.deepEqual(h.generationSignals, [true, false]);
+    started('quiet', { quietToLoud: true }, false);
+    assert.deepEqual(h.generationSignals, [true, false, true]);
 });

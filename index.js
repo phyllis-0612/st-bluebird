@@ -2,11 +2,11 @@
 // SillyTavern 小手机扩展：角色在剧情里主动给你发消息，手机里聊过的内容自然回到剧情。
 // 当前进度：第二段 · 消息和楼层
 
-import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.2.0';
-import { refreshPanel, openConversation } from './src/panel.js?v=0.2.0';
-import { mountEntry, mountSettingsBlock, entryIsMounted, setUnread } from './src/entry.js?v=0.2.0';
-import { onChatStateChanged } from './src/chat-store.js?v=0.2.0';
-import { initChatIntegration } from './src/chat-integration.js?v=0.2.0';
+import { ctx, getSettings, watchSystemTheme, onSettingChanged } from './src/settings.js?v=0.2.1';
+import { refreshPanel, openConversation } from './src/panel.js?v=0.2.1';
+import { mountEntry, mountSettingsBlock, entryIsMounted, setUnread } from './src/entry.js?v=0.2.1';
+import { onChatStateChanged } from './src/chat-store.js?v=0.2.1';
+import { initChatIntegration } from './src/chat-integration.js?v=0.2.1';
 
 let mountObserver = null;
 
@@ -43,6 +43,7 @@ function init() {
     onSettingChanged((key) => {
         if (key === 'entryMode' || key === 'enabled') ensureUI();
         if (key === 'enabled') refreshPanel();
+        if (key === 'voiceEnabled') refreshPanel('voice-mode');
     });
     ensureUI();             // 扩展设置块和输入框入口，必要时补挂
     watchSystemTheme();     // 「跟随系统」时跟着系统换深浅色
