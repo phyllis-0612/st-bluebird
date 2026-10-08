@@ -9,7 +9,7 @@ function harness() {
     let serial = 0, saves = 0, context;
     const timers = new Map(), events = new Map(), prompts = new Map(), errors = [];
     const settings = { enabled: true, thinkTags: ['think'], statusTags: ['status'], bodyTag: 'content', recentStoryCount: 2,
-        phoneHistoryCount: 30, phoneDebounceMs: 1500, phoneReplyTokens: 1024, phoneModel: '' };
+        phoneHistoryCount: 30, phoneReplyTokens: 1024, phoneModel: '' };
     const c = { chat: [{ mes: '<content>她出门了</content><status>不能进记忆</status>', is_user: false, extra: {} }], chatMetadata: {},
         chatId: 'first', characterId: 0, groupId: null, name1: '鱼仔', mainApi: 'openai',
         characters: [{ name: '陆', avatar: 'lu.png', description: '温柔的{{char}}', personality: '稳重', scenario: '认识{{user}}' }],
@@ -42,19 +42,19 @@ test('sending all five types persists, reloads and does not create story floors;
     for (const [type, content, note] of [['text', '我到了'], ['voice', '听我说'], ['image', '落雨的车窗'], ['transfer', '20.50', '车费'], ['location', '便利店', '等雨']]) {
         await h.scope.sendPhoneMessage('陆', type, content, note);
     }
-    assert.equal(h.pending().length, 5); assert.equal(h.c.chat.length, 1); assert.equal(h.saves(), 5);
+    assert.equal(h.pending().length, 5); assert.equal(h.c.chat.length, 1); assert.equal(h.saves(), 5); assert.equal(h.scope.getPhoneStatus('陆').phase, 'idle'); assert.equal(h.timers.size, 0);
     h.scope.rebuildChatState(); const messages = h.scope.getChatState().conversations[0].messages;
     assert.equal(messages.length, 5); assert.ok(messages.every(m => m.pending && m.isSelf));
     await assert.rejects(h.scope.sendPhoneMessage('陆', 'transfer', '0'), /金额/);
     await assert.rejects(h.scope.sendPhoneMessage('别人', 'text', '你好'), /角色卡/);
 });
 
-test('debounce merges consecutive messages; independent raw request sees persona, story and pending history', async () => {
+test('multiple sends make no API calls until one explicit reply request sees the whole conversation', async () => {
     const h = harness(); let requests = 0, request;
     h.c.generateRaw = async r => { requests++; request = r; return '陆|text|两条都看到了\n陆|voice|早点休息'; };
     await h.scope.sendPhoneMessage('陆', 'text', '第一条'); await h.scope.sendPhoneMessage('陆', 'text', '第二条');
-    assert.equal([...h.timers.values()].filter(t => t.delay === 1500).length, 1);
-    await h.flush(1500);
+    assert.equal(requests, 0); assert.equal(h.timers.size, 0);
+    await h.scope.requestPhoneReply('陆');
     assert.equal(requests, 1); assert.match(request.prompt, /温柔的陆/); assert.match(request.prompt, /认识鱼仔/);
     assert.match(request.prompt, /她出门了/); assert.doesNotMatch(request.prompt, /不能进记忆/);
     assert.match(request.prompt, /第一条/); assert.match(request.prompt, /第二条/); assert.equal(request.trimNames, false);
@@ -65,7 +65,7 @@ test('switching chat or editing during an in-flight reply cannot write stale res
     for (const action of ['switch', 'edit']) {
         const h = harness(); let resolve;
         h.c.generateRaw = () => new Promise(r => { resolve = r; });
-        await h.scope.sendPhoneMessage('陆', 'text', '等你'); const running = h.flush(1500);
+        await h.scope.sendPhoneMessage('陆', 'text', '等你'); const running = h.scope.requestPhoneReply('陆');
         for (let i = 0; i < 10 && !resolve; i++) await Promise.resolve();
         assert.equal(typeof resolve, 'function');
         if (action === 'switch') { const other = h.switchChat(); await h.emit('CHAT_CHANGED'); assert.equal(other.chatMetadata.bluebird.pending.length, 0); }
@@ -77,9 +77,9 @@ test('switching chat or editing during an in-flight reply cannot write stale res
 
 test('invalid output is kept out of pending and can retry without resending the user message', async () => {
     const h = harness(); h.c.generateRaw = async () => '我|text|冒充用户';
-    await h.scope.sendPhoneMessage('陆', 'text', '你好'); await h.flush(1500);
+    await h.scope.sendPhoneMessage('陆', 'text', '你好'); await h.scope.requestPhoneReply('陆');
     assert.equal(h.pending().length, 1); assert.equal(h.scope.getPhoneStatus('陆').phase, 'error');
-    h.c.generateRaw = async () => '陆|text|你好呀'; h.scope.retryPhoneReply('陆'); await h.flush(1500);
+    h.c.generateRaw = async () => '陆|text|你好呀'; await h.scope.requestPhoneReply('陆');
     assert.equal(h.pending().length, 2); assert.equal(h.pending()[0].fields[2], '你好');
 });
 
@@ -91,13 +91,13 @@ test('model override only changes the marked request and never mutates connectio
         await h.emit('CHAT_COMPLETION_SETTINGS_READY', other); await h.emit('CHAT_COMPLETION_SETTINGS_READY', own);
         return '陆|text|收到';
     };
-    await h.scope.sendPhoneMessage('陆', 'text', '你好'); await h.flush(1500);
+    await h.scope.sendPhoneMessage('陆', 'text', '你好'); await h.scope.requestPhoneReply('陆');
     assert.equal(own.model, 'account-flash'); assert.equal(other.model, 'main-model');
     assert.equal((h.events.get('CHAT_COMPLETION_SETTINGS_READY') || []).length, 0);
 });
 
 test('cancel, failure, quiet and continue never clear pending; successful generation lands once on previous user floor', async () => {
-    const h = harness(); await h.scope.sendPhoneMessage('陆', 'text', '我到家了'); await h.flush(1500);
+    const h = harness(); await h.scope.sendPhoneMessage('陆', 'text', '我到家了'); await h.scope.requestPhoneReply('陆');
     h.start('quiet'); assert.equal(h.batch(), null); h.start('continue'); assert.equal(h.batch(), null);
     h.c.chat.push({ mes: '主线下一句', is_user: true, extra: {}, swipes: ['主线下一句'], swipe_id: 0 });
     h.start(); assert.match(h.prompts.get('bluebird-pending'), /我到家了/);
@@ -119,7 +119,7 @@ test('stream errors emitting MESSAGE_RECEIVED are rejected; success works when E
 });
 
 test('landing retains post-snapshot messages and read state, rejects altered target and rolls back failed saves', async () => {
-    const h = harness(); await h.scope.sendPhoneMessage('陆', 'text', '第一条'); await h.flush(1500);
+    const h = harness(); await h.scope.sendPhoneMessage('陆', 'text', '第一条'); await h.scope.requestPhoneReply('陆');
     h.scope.markConversationRead('name:陆'); h.start(); const batch = h.batch();
     await h.scope.appendPendingMessages('陆', [['我', 'text', '后来的一条']]); h.responseFloor();
     await h.scope.landPendingMessages(batch, 1);

@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
@@ -24,7 +24,6 @@ const DEFAULTS = Object.freeze({
     phoneModel: '', // 留空跟随酒馆模型；可填写当前连接支持的 Flash 模型 ID
     recentStoryCount: 20,
     phoneHistoryCount: 30,
-    phoneDebounceMs: 1500,
     phoneReplyTokens: 1024,
     bodyTag: 'content',
     statusTags: ['status', 'statusbar', 'state', 'details'],
@@ -56,7 +55,7 @@ export function getSettings() {
     if (![0, 1].includes(s.proactiveDepth)) s.proactiveDepth = DEFAULTS.proactiveDepth;
     if (typeof s.phoneModel !== 'string') s.phoneModel = '';
     s.phoneModel = s.phoneModel.trim();
-    for (const [key, min, max] of [['recentStoryCount', 1, 200], ['phoneHistoryCount', 1, 200], ['phoneDebounceMs', 0, 10000], ['phoneReplyTokens', 128, 8192]]) {
+    for (const [key, min, max] of [['recentStoryCount', 1, 200], ['phoneHistoryCount', 1, 200], ['phoneReplyTokens', 128, 8192]]) {
         if (!Number.isSafeInteger(s[key]) || s[key] < min || s[key] > max) s[key] = DEFAULTS[key];
     }
     if (typeof s.bodyTag !== 'string' || !/^[a-z][a-z0-9_-]*$/i.test(s.bodyTag)) s.bodyTag = DEFAULTS.bodyTag;

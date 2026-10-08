@@ -1,8 +1,8 @@
 // 第四段：后台手机回复和主线暂存快照，所有异步任务绑定原聊天。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.4.0';
-import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.4.0';
-import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.4.0';
-import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.4.0';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.4.1';
+import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.4.1';
+import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.4.1';
+import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.4.1';
 
 export const PENDING_PROMPT_KEY = 'bluebird-pending';
 const jobs = new Map(), phoneStatusListeners = new Set();
@@ -27,27 +27,26 @@ function validJob(job) { return jobs.get(job.name) === job && job.epoch === epoc
 export async function sendPhoneMessage(name, type, content, note = '') {
     if (!getSettings().enabled || !storyContacts(ctx()).includes(name)) throw new Error('当前只能与角色卡联系人聊天');
     if (isGenerationBusy()) throw new Error('请等这一轮剧情生成结束后再发手机消息');
+    if (getPhoneStatus(name).phase === 'typing') throw new Error('请等这次手机回复结束后再发消息');
     const fields = ['我', type, String(content).trim()];
     if (['voice', 'transfer', 'location'].includes(type) && (note || type === 'transfer')) fields.push(String(note).trim());
     if (!parseFloor(`<bb-phone chat="验证">${serializeFields(fields)}</bb-phone>`).messages.length) throw new Error(type === 'transfer' ? '金额请填大于 0 的数字，最多两位小数' : '请填写消息内容');
     const owner = captureCurrentChat();
     await appendPendingMessages(name, [fields], owner);
-    if (currentChatMatches(owner) && !isGenerationBusy()) scheduleReply(name);
+    // 发送只保存到当前聊天的暂存区。用户明确点击「让对方回复」才请求 API。
+    if (currentChatMatches(owner) && getPhoneStatus(name).phase === 'error') { jobs.delete(name); notify(); }
 }
 
-function scheduleReply(name) {
+export function requestPhoneReply(name) {
+    if (isGenerationBusy()) throw new Error('请等剧情生成结束后再请求手机回复');
+    if (!storyContacts(ctx()).includes(name)) throw new Error('当前联系人已不在角色卡中');
+    const conversation = getChatState().conversations.find(c => c.name === name);
+    if (!conversation?.messages.at(-1)?.pending || !conversation.messages.at(-1)?.isSelf) throw new Error('请先发送一条手机消息');
+    if (['waiting', 'typing'].includes(getPhoneStatus(name).phase)) throw new Error('对方正在回复，请稍等');
     const previous = jobs.get(name); clearTimeout(previous?.timer);
     const job = { name, owner: captureCurrentChat(), epoch, phase: 'waiting', error: '', timer: null };
     jobs.set(name, job); notify();
-    job.timer = setTimeout(() => runReply(job), getSettings().phoneDebounceMs);
-}
-
-export function retryPhoneReply(name) {
-    if (isGenerationBusy()) throw new Error('请等剧情生成结束后再重试');
-    if (!storyContacts(ctx()).includes(name)) throw new Error('当前联系人已不在角色卡中');
-    const conversation = getChatState().conversations.find(c => c.name === name);
-    if (!conversation?.messages.some(m => m.pending && m.isSelf)) throw new Error('没有待回复的手机消息');
-    scheduleReply(name);
+    return runReply(job);
 }
 
 async function runReply(job) {

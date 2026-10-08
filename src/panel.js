@@ -2,15 +2,15 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.4.0';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.4.0';
-import { createEntryModeControl } from './entry-controls.js?v=0.4.0';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.4.0';
-import { scrollToFloor } from './chat-integration.js?v=0.4.0';
-import { fingerprint } from './messages.js?v=0.4.0';
-import { sendPhoneMessage, retryPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.4.0';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.4.0';
-import { getStoryContacts } from './proactive.js?v=0.4.0';
+import { icons } from './icons.js?v=0.4.1';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.4.1';
+import { createEntryModeControl } from './entry-controls.js?v=0.4.1';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.4.1';
+import { scrollToFloor } from './chat-integration.js?v=0.4.1';
+import { fingerprint } from './messages.js?v=0.4.1';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.4.1';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.4.1';
+import { getStoryContacts } from './proactive.js?v=0.4.1';
 
 let root = null;
 let page = 'list';
@@ -202,14 +202,18 @@ function renderConversation() {
     }
     wrap.append(messages);
     const status = getPhoneStatus(conversation.name);
+    const waitingCount = [...conversation.messages].reverse().findIndex(m => !m.pending || !m.isSelf);
+    const queued = waitingCount < 0 ? conversation.messages.filter(m => m.pending && m.isSelf).length : waitingCount;
     if (status.phase === 'waiting' || status.phase === 'typing') {
         const typing = el('p', 'bb-phone-status', '对方正在输入…'); typing.setAttribute('role', 'status'); wrap.append(typing);
-    } else if (status.phase === 'error' || (conversation.messages.at(-1)?.pending && conversation.messages.at(-1)?.isSelf)) {
+    } else if (queued > 0) {
         const warning = el('div', 'bb-phone-status is-error');
-        warning.append(el('span', '', status.error || '待回复的消息已保留'));
-        const retry = el('button', 'bb-reply-retry', '重试回复'); retry.type = 'button'; retry.dataset.bbAction = 'retry-reply'; warning.append(retry); wrap.append(warning);
+        warning.append(el('span', '', status.error || `已发 ${queued} 条，等待你让对方回复`));
+        const reply = el('button', 'bb-reply-retry', status.phase === 'error' ? '重试回复' : '让对方回复');
+        reply.type = 'button'; reply.dataset.bbAction = 'request-reply'; reply.disabled = isGenerationBusy() || sending;
+        warning.append(reply); wrap.append(warning);
     }
-    const allowed = getStoryContacts().includes(conversation.name) && !isGenerationBusy();
+    const allowed = getStoryContacts().includes(conversation.name) && !isGenerationBusy() && !['waiting', 'typing'].includes(status.phase);
     const composeWrap = el('div', 'bb-compose-wrap');
     const draft = currentDraft();
     if (attachmentType === 'menu') {
@@ -343,7 +347,6 @@ function renderSettings() {
         ['phoneModel', '手机回复模型', '留空跟随酒馆当前模型。用 Flash 时填当前连接支持的准确模型 ID；不需要重复填 key。'],
         ['recentStoryCount', '无结绳时的近期剧情楼数', '有有效结绳记忆时，使用总结、脉络和实际未隐藏剧情。', 1, 200],
         ['phoneHistoryCount', '手机回复记录条数', '只限制带给模型的会话记录，不删除暂存消息。', 1, 200],
-        ['phoneDebounceMs', '连发等待（毫秒）', '默认 1500 毫秒；连续发消息后合并回复。', 0, 10000],
         ['phoneReplyTokens', '手机回复最大 token', '默认 1024，供短消息回复使用。', 128, 8192],
         ['bodyTag', '剧情正文标签', '默认 content；找不到时使用去除思考、手机和状态块的正文。'],
         ['statusTags', '排除的状态栏标签', '逗号分隔，不把这些块带给手机回复模型。'],
@@ -393,9 +396,9 @@ async function onClick(event) {
         return;
     }
     if (btn.dataset.bbAction === 'send-text' || btn.dataset.bbAction === 'send-attachment') { await submitPhone(btn.dataset.bbAction === 'send-text'); return; }
-    if (btn.dataset.bbAction === 'retry-reply') {
+    if (btn.dataset.bbAction === 'request-reply') {
         const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
-        try { retryPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
+        try { requestPhoneReply(name); } catch (error) { toastr.info(error.message); } return;
     }
     if (btn.dataset.bbAction === 'attachments') { attachmentType = attachmentType ? null : 'menu'; render(); return; }
     if (btn.dataset.bbAction === 'cancel-attachment') { attachmentType = null; render(); return; }
@@ -458,7 +461,7 @@ function onChange(event) {
     if (input.disabled) return;
     const key = input.dataset?.bbSetting;
     if (!key) return;
-    if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneDebounceMs', 'phoneReplyTokens'].includes(key)) {
+    if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneReplyTokens'].includes(key)) {
         if (key === 'statusTags') setSetting(key, input.value.split(/[,，\s]+/).filter(t => /^[a-z][a-z0-9_-]*$/i.test(t)));
         else if (key === 'phoneModel') setSetting(key, input.value.trim());
         else if (key === 'bodyTag' && /^[a-z][a-z0-9_-]*$/i.test(input.value.trim())) setSetting(key, input.value.trim());
