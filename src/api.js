@@ -1,5 +1,5 @@
 // 青鸟独立的聊天补全预设；默认仍跟随酒馆现有连接。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.6.4';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.6.5';
 
 export function activeApiPreset(settings = getSettings()) {
     return (settings.apiPresets || []).find(item => item.id === settings.activeApiPresetId) || null;

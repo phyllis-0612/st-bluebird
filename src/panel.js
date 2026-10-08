@@ -2,18 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.4';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.4';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.4';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.4';
-import { scrollToFloor } from './chat-integration.js?v=0.6.4';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.4';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.4';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.4';
-import { getStoryContacts } from './proactive.js?v=0.6.4';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.4';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.4';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.4';
+import { icons } from './icons.js?v=0.6.5';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.5';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.5';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.5';
+import { scrollToFloor } from './chat-integration.js?v=0.6.5';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.5';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.5';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.5';
+import { getStoryContacts } from './proactive.js?v=0.6.5';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.5';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.5';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.5';
 
 let root = null;
 let page = 'list';
@@ -28,6 +28,7 @@ const drafts = new Map();
 let attachmentType = null;
 let sending = false;
 let candidates = null, extracting = false;
+let voicePickerFor = null;
 let presetModels = [];
 function persistContactVoice(name, voiceId) {
     const provider = getSettings().voiceProvider;
@@ -288,19 +289,44 @@ function renderContacts() {
         }
         row.append(level);
         const voices = knownVoices(provider), chosen = contact.voice?.[provider] || (contact.voice?.provider === provider ? contact.voice?.voiceId : '') || '';
-        const voiceLabel = el('label', 'bb-entry-setting'); voiceLabel.append(el('span', 'bb-switch-title', `${contact.name}的音色`));
-        const select = el('select', 'bb-settings-input'); select.dataset.bbVoiceSelect = contact.name;
-        for (const [value, title] of [['', '不配音色 · 只看文字'], ...voices.map(v => [v.voiceId, v.label])]) {
-            const option = el('option', null, title); option.value = value; option.selected = chosen === value; select.append(option);
-        }
-        if (chosen && !voices.some(v => v.voiceId === chosen)) { const option = el('option', null, `${chosen}（已绑定）`); option.value = chosen; option.selected = true; select.append(option); }
-        voiceLabel.append(select); row.append(voiceLabel);
+        row.append(el('span', 'bb-switch-title', `${contact.name}的音色`));
+        const chosenLabel = voices.find(v => v.voiceId === chosen)?.label || (chosen ? `${chosen}（已绑定）` : '不配音色 · 只看文字');
+        const pick = el('button', 'bb-voice-choose', chosenLabel); pick.type = 'button'; pick.dataset.bbVoicePicker = contact.name;
+        pick.setAttribute('aria-label', `选择${contact.name}的音色，当前${chosenLabel}`); row.append(pick);
         const manual = el('input', 'bb-settings-input'); manual.type = 'text'; manual.placeholder = '或手动输入 voice_id';
         manual.value = chosen; manual.dataset.bbVoiceId = contact.name; row.append(manual);
         row.append(el('span', 'bb-switch-hint', `当前服务 Key 来源：${voiceSource(provider).source}${voices.length ? '' : '；梨园音色库暂无此服务的音色'}`));
         wrap.append(row);
     }
     return wrap;
+}
+
+/** 手机端使用青鸟自己的滚动列表，避免原生 select 弹层被酒馆页面截获。 */
+function renderVoicePicker() {
+    const contact = selectedContacts().find(c => c.name === voicePickerFor);
+    if (!contact) { voicePickerFor = null; return null; }
+    const provider = getSettings().voiceProvider, voices = knownVoices(provider);
+    const chosen = contact.voice?.[provider] || (contact.voice?.provider === provider ? contact.voice?.voiceId : '') || '';
+    const overlay = el('div', 'bb-voice-picker'); overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `选择${contact.name}的音色`);
+    const sheet = el('div', 'bb-voice-picker-sheet');
+    const header = el('div', 'bb-voice-picker-header');
+    header.append(el('strong', '', `${contact.name} · ${provider === 'elevenlabs' ? 'ElevenLabs' : 'MiniMax'} 音色`));
+    const close = el('button', 'bb-reply-retry', '返回通讯录'); close.type = 'button'; close.dataset.bbAction = 'close-voice-picker'; header.append(close);
+    sheet.append(header);
+    const search = el('input', 'bb-settings-input bb-voice-search'); search.type = 'search'; search.placeholder = '搜索音色名称或 ID';
+    search.dataset.bbVoiceQuery = ''; search.setAttribute('aria-label', '搜索音色'); sheet.append(search);
+    const list = el('div', 'bb-voice-picker-list');
+    const choices = [{ voiceId: '', label: '不配音色 · 只看文字' }, ...voices];
+    if (chosen && !voices.some(v => v.voiceId === chosen)) choices.push({ voiceId: chosen, label: `${chosen}（已绑定）` });
+    for (const voice of choices) {
+        const option = el('button', 'bb-voice-option', voice.label); option.type = 'button';
+        option.dataset.bbVoiceChoice = voice.voiceId; option.dataset.bbVoiceContact = contact.name;
+        option.dataset.bbVoiceSearchText = `${voice.label} ${voice.voiceId}`.toLocaleLowerCase();
+        option.setAttribute('aria-pressed', String(voice.voiceId === chosen)); list.append(option);
+    }
+    const noResult = el('p', 'bb-switch-hint', '没有匹配的音色'); noResult.hidden = true; noResult.dataset.bbVoiceEmpty = ''; list.append(noResult);
+    sheet.append(list); overlay.append(sheet); return overlay;
 }
 
 function settingsChoices(title, key, current, choices) {
@@ -486,6 +512,10 @@ function render() {
     const draftKey = active?.dataset?.bbDraft;
     const selection = draftKey ? [active.selectionStart, active.selectionEnd] : null;
     root.querySelector('.bb-body').replaceChildren(pages[page]());
+    root.querySelector('.bb-voice-picker')?.remove();
+    const picker = page === 'contacts' && voicePickerFor ? renderVoicePicker() : null;
+    root.querySelector('.bb-phone').inert = Boolean(picker);
+    if (picker) root.append(picker);
     if (draftKey) {
         const next = root.querySelector(`[data-bb-draft="${draftKey}"]`);
         if (next && !next.disabled) { next.focus({ preventScroll: true }); if (typeof next.setSelectionRange === 'function' && selection[0] !== null) next.setSelectionRange(...selection); }
@@ -498,6 +528,13 @@ async function onClick(event) {
     if (btn.dataset.bbAction === 'close') {
         closePanel();
         return;
+    }
+    if (btn.dataset.bbAction === 'close-voice-picker') { voicePickerFor = null; render(); return; }
+    if (btn.dataset.bbVoicePicker !== undefined) { voicePickerFor = btn.dataset.bbVoicePicker; render(); return; }
+    if (btn.dataset.bbVoiceChoice !== undefined) {
+        if (voicePickerFor !== btn.dataset.bbVoiceContact) return;
+        persistContactVoice(voicePickerFor, btn.dataset.bbVoiceChoice);
+        voicePickerFor = null; render(); return;
     }
     if (['api-new', 'api-copy', 'api-delete'].includes(btn.dataset.bbAction)) {
         const settings = getSettings(), current = activeApiPreset(settings);
@@ -603,6 +640,13 @@ async function submitPhone(isText) {
 }
 
 function onInput(event) {
+    if (event.target.dataset?.bbVoiceQuery !== undefined) {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        const choices = root.querySelectorAll('[data-bb-voice-choice]');
+        for (const choice of choices) choice.hidden = !choice.dataset.bbVoiceSearchText.includes(query);
+        const empty = root.querySelector('[data-bb-voice-empty]'); if (empty) empty.hidden = choices.some(choice => !choice.hidden);
+        return;
+    }
     const key = event.target.dataset?.bbDraft;
     if (key && page === 'conversation') currentDraft()[key] = event.target.value;
 }
@@ -624,13 +668,6 @@ function onChange(event) {
         const key = input.dataset.bbTtsProvider === 'minimax' ? 'ttsMiniMax' : 'ttsElevenLabs';
         setSetting(key, { ...getSettings()[key], [input.dataset.bbTtsField]: input.value.trim() });
         if (input.dataset.bbTtsField === 'apiKey') render(); return;
-    }
-    if (input.dataset?.bbVoiceSelect !== undefined) {
-        persistContactVoice(input.dataset.bbVoiceSelect, input.value.trim());
-        // iOS 选择器在滚动选项时也可能触发 change；重建 select 会直接关掉原生弹层。
-        const manual = input.closest('.bb-contact-candidate')?.querySelector('[data-bb-voice-id]');
-        if (manual) manual.value = input.value;
-        return;
     }
     if (input.dataset?.bbVoiceId !== undefined) {
         persistContactVoice(input.dataset.bbVoiceId, input.value.trim());
@@ -695,7 +732,8 @@ function onKeydown(event) {
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        closePanel();
+        if (voicePickerFor) { voicePickerFor = null; render(); }
+        else closePanel();
     } else if (event.key === 'Tab') {
         const controls = focusableControls();
         const first = controls[0];
@@ -762,6 +800,9 @@ export function closePanel() {
     if (!root || !isOpen) return;
     root.hidden = true;
     isOpen = false;
+    voicePickerFor = null;
+    root.querySelector('.bb-voice-picker')?.remove();
+    root.querySelector('.bb-phone').inert = false;
     document.documentElement.classList.remove('bb-open');
     unlockBackground();
     const target = returnFocus?.isConnected && !returnFocus.disabled
@@ -780,7 +821,7 @@ export function togglePanel() {
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
     if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
-    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; if (page === 'conversation') page = 'list'; }
+    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; voicePickerFor = null; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {
         const body = root.querySelector('.bb-body'), top = body.scrollTop;

@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.6.4';
+export const VERSION = '0.6.5';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();

@@ -633,6 +633,17 @@ html.bb-open body {
 #bluebird-panel .bb-contact-check input { width: 20px; height: 20px; accent-color: var(--bb-accent); }
 #bluebird-panel .bb-contact-candidate .bb-settings-input { width: 100%; min-height: 44px; }
 #bluebird-panel .bb-contact-open { width: 100%; min-height: 44px; text-align: left; font-weight: 700; color: var(--bb-accent-strong); }
+#bluebird-panel .bb-voice-choose { width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid var(--bb-line); border-radius: 10px; background: var(--bb-surface); color: var(--bb-ink); text-align: left; }
+#bluebird-panel .bb-voice-picker { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); background: rgba(0, 0, 0, .52); }
+#bluebird-panel .bb-voice-picker-sheet { display: flex; flex-direction: column; width: min(100%, 560px); height: min(82dvh, 760px); min-height: 0; overflow: hidden; border-radius: 18px; background: var(--bb-surface); color: var(--bb-ink); box-shadow: var(--bb-shadow); }
+#bluebird-panel .bb-voice-picker-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 1px solid var(--bb-line); }
+#bluebird-panel .bb-voice-picker-header strong { overflow-wrap: anywhere; }
+#bluebird-panel .bb-voice-search { flex: none; width: calc(100% - 28px); min-height: 46px; margin: 12px 14px; padding: 8px 12px; border: 1px solid var(--bb-line); border-radius: 10px; background: var(--bb-card); color: var(--bb-ink); font-size: 16px; }
+#bluebird-panel .bb-voice-picker-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding-bottom: 12px; }
+#bluebird-panel .bb-voice-option { display: block; width: 100%; min-height: 48px; padding: 12px 18px; border-bottom: 1px solid var(--bb-line); color: var(--bb-ink); text-align: left; overflow-wrap: anywhere; touch-action: manipulation; }
+#bluebird-panel .bb-voice-option[aria-pressed="true"] { background: var(--bb-accent-soft); color: var(--bb-accent-strong); font-weight: 700; }
+#bluebird-panel .bb-voice-option[hidden] { display: none; }
+#bluebird-panel .bb-voice-picker-list > .bb-switch-hint { padding: 12px 18px; }
 
 #bluebird-panel .bb-tag-scan { display: flex; flex-direction: column; gap: 7px; padding: 12px; border: 1px solid var(--bb-line); border-radius: 12px; background: var(--bb-card); }
 #bluebird-panel .bb-tag-choice { display: flex; align-items: center; gap: 10px; min-height: 40px; overflow-wrap: anywhere; }

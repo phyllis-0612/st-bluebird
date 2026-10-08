@@ -217,29 +217,39 @@ test('proactive settings persist button choices and numeric values, reject inval
 test('settings switch the TTS service while contacts keep one Playhouse voice per provider', async () => {
     const h = panelHarness(); h.scope.openPanel();
     await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
-    let pick = h.root.querySelector('[data-bb-voice-select="陆"]');
-    assert.ok(pick.children.some(option => option.textContent === '梨园小米'));
-    pick.value = 'm-1'; h.scope.onChange({ target: pick });
+    assert.equal(h.root.querySelector('[data-bb-voice-select]'), null);
+    await h.click(h.root.querySelector('[data-bb-voice-picker="陆"]'));
+    assert.equal(h.root.querySelector('.bb-voice-picker').getAttribute('role'), 'dialog');
+    assert.equal(h.root.querySelector('.bb-phone').inert, true);
+    assert.ok(h.root.querySelector('[data-bb-voice-choice="m-1"]'));
+    const search = h.root.querySelector('[data-bb-voice-query]'); search.value = '小米'; h.scope.onInput({ target: search });
+    assert.equal(h.root.querySelector('[data-bb-voice-choice="m-1"]').hidden, false);
+    assert.equal(h.root.querySelector('[data-bb-voice-choice=""]').hidden, true);
+    await h.click(h.root.querySelector('[data-bb-voice-choice="m-1"]'));
     assert.equal(h.contacts().find(c => c.name === '陆').voice.minimax, 'm-1');
-    assert.equal(h.root.querySelector('[data-bb-voice-select="陆"]'), pick, '选择音色时保留原下拉框，不打断滚动');
+    assert.equal(h.root.querySelector('.bb-voice-picker'), null);
+    assert.equal(h.root.querySelector('.bb-phone').inert, false);
     assert.equal(h.root.querySelector('[data-bb-voice-id="陆"]').value, 'm-1');
     await h.click(h.root.querySelector('[data-bb-page="settings"]'));
     const eleven = h.root.querySelectorAll('[data-bb-setting="voiceProvider"]').find(input => input.value === 'elevenlabs');
     h.scope.onChange({ target: eleven }); assert.equal(h.settings.voiceProvider, 'elevenlabs');
     await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
-    pick = h.root.querySelector('[data-bb-voice-select="陆"]');
-    assert.ok(pick.children.some(option => option.textContent === '梨园小十一'));
-    pick.value = 'e-1'; h.scope.onChange({ target: pick });
+    await h.click(h.root.querySelector('[data-bb-voice-picker="陆"]'));
+    assert.ok(h.root.querySelector('[data-bb-voice-choice="e-1"]'));
+    await h.click(h.root.querySelector('[data-bb-voice-choice="e-1"]'));
     assert.equal(h.contacts().find(c => c.name === '陆').voice.elevenlabs, 'e-1');
     assert.equal(h.contacts().find(c => c.name === '陆').voice.minimax, 'm-1');
 });
 
 test('refreshing contact voices rereads the latest Playhouse list', async () => {
     const h = panelHarness(); h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
-    assert.equal(h.root.querySelector('[data-bb-voice-select="陆"]').children.some(option => option.value === 'm-2'), false);
+    await h.click(h.root.querySelector('[data-bb-voice-picker="陆"]'));
+    assert.equal(h.root.querySelector('[data-bb-voice-choice="m-2"]'), null);
+    await h.click(h.root.querySelector('[data-bb-action="close-voice-picker"]'));
     h.scope.knownVoices = () => [{ voiceId: 'm-1', label: '梨园小米' }, { voiceId: 'm-2', label: '梨园新音色' }];
     await h.click(h.root.querySelector('[data-bb-action="refresh-playhouse-voices"]'));
-    assert.ok(h.root.querySelector('[data-bb-voice-select="陆"]').children.some(option => option.value === 'm-2'));
+    await h.click(h.root.querySelector('[data-bb-voice-picker="陆"]'));
+    assert.ok(h.root.querySelector('[data-bb-voice-choice="m-2"]'));
 });
 
 test('Chinese thought tag persists and detected status tag can be checked and unchecked', async () => {
