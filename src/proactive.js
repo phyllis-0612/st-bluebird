@@ -1,9 +1,10 @@
 // 第三段：只给主线生成注入规则，不另发请求，也不提前扣冷却。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.4.1';
-import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.4.1';
-import { captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.4.1';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.5.0';
+import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.5.0';
+import { captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.5.0';
 
-import { preparePendingGeneration } from './phone-chat.js?v=0.4.1';
+import { preparePendingGeneration } from './phone-chat.js?v=0.5.0';
+import { selectedContacts } from './contacts.js?v=0.5.0';
 
 export const PROMPT_KEY = 'bluebird-phone';
 export const INTERCEPTOR_KEY = 'bluebirdGenerationInterceptor';
@@ -12,7 +13,7 @@ let initialized = false;
 
 /** 第五段之前只使用当前角色卡；群聊按成员头像对应角色，不能把编号当头像。 */
 export function getStoryContacts(context = ctx()) {
-    return storyContacts(context);
+    return selectedContacts(context).map(c => c.name);
 }
 
 /** 原文含隐藏楼层也计数。只认 AI 楼层中有效的主线来信，手机暂存/思考不重置冷却。 */
@@ -33,10 +34,10 @@ export function cooldownState(chat, settings, type) {
 }
 
 export function buildProactivePrompt(context, settings, type) {
-    const contacts = getStoryContacts(context);
+    const directory = selectedContacts(context, settings), contacts = directory.map(c => c.name);
     if (!settings.enabled || !Array.isArray(context.chat) || !contacts.length) return '';
     const user = JSON.stringify(String(context.name1 || '用户'));
-    const lines = ['[青鸟·手机]', `用户：${user}。联系人：${contacts.map(name => JSON.stringify(name)).join('、')}。`,
+    const lines = ['[青鸟·手机]', `用户：${user}。联系人及各自主动程度：${directory.map(c => `${JSON.stringify(c.name)}（${LEVELS[c.level] || LEVELS.normal}）`).join('、')}。`,
         `回复末尾写 <bb-present>此刻与${user}同一场景的人名，逗号分隔</bb-present>。只列实际在场者，不含用户；没有写「无」，无法判断写「未知」。不要从思考、回忆或假设中判断在场。`];
     const cooldown = cooldownState(context.chat, settings, type);
     if (type === 'continue') {
@@ -47,7 +48,7 @@ export function buildProactivePrompt(context, settings, type) {
         lines.push(`手机消息冷却中，还需间隔 ${cooldown.remaining} 楼。这一轮不要写 bb-phone，也不要把新的手机消息内容写进正文。`);
     } else {
         const sender = serializeFields([contacts[0]]);
-        lines.push(`主动程度：${LEVELS[settings.proactiveLevel] || LEVELS.normal}。`,
+        lines.push('每人按上面的主动程度决定是否发，发送人必须与联系人原名完全一致。',
             `只有不在${user}身边的联系人，按人设、当前剧情和主动程度决定是否发手机消息。同场的人不发；不替用户发；没有合适消息就不写 bb-phone。`,
             '有消息时在正文末尾、思考标签外写一个完整块，每条独占一行，发送人使用联系人原名。格式如下（只是格式示例，不要照抄）：',
             `<bb-phone>\n${sender}|text|消息内容\n${sender}|voice|语音里说的话\n${sender}|image|照片画面描述\n${sender}|transfer|12.50|转账备注\n${sender}|location|地点|备注\n</bb-phone>`,

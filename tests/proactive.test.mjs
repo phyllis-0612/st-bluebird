@@ -12,10 +12,10 @@ function harness() {
         characters: [{ avatar: 'lu.png', name: '陆' }, { avatar: 'he.png', name: '何' }], groups: [], extensionSettings: {}, saveSettingsDebounced() {},
         eventTypes: Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_CHANGED'].map(n => [n, n])),
         eventSource: { on(n, fn) { events.set(n, fn); } }, setExtensionPrompt(...args) { calls.push(args); } };
-    const scope = vm.createContext({ SillyTavern: { getContext: () => c }, window: { matchMedia: () => ({ matches: false }) },
+    const scope = vm.createContext({ world_info: {}, SillyTavern: { getContext: () => c }, window: { matchMedia: () => ({ matches: false }) },
         document: { querySelectorAll: () => [] }, parseFloor, serializeFields, storyContacts, preparePendingGeneration() {},
         captureCurrentChat: () => ({ chat: c.chat, id: c.chatId }), currentChatMatches: o => o.chat === c.chat && o.id === c.chatId });
-    vm.runInContext(source('settings') + '\n' + source('proactive'), scope);
+    vm.runInContext(source('settings') + '\n' + source('contacts') + '\n' + source('proactive'), scope);
     const settings = scope.getSettings();
     return { c, scope, settings, calls, events, prompt: type => scope.buildProactivePrompt(c, settings, type),
         prepare(type) { scope.prepareProactiveGeneration([], 8000, () => { throw Error('must not abort'); }, type); return calls.at(-1); } };
@@ -33,6 +33,14 @@ test('character zero is valid; groups use avatars and exclude disabled or missin
     assert.deepEqual(Array.from(h.scope.getStoryContacts()), ['何']);
     h.c.groupId = 'unknown'; assert.equal(h.prompt(), '');
     h.c.groupId = null; h.c.characterId = undefined; assert.equal(h.prompt(), '');
+});
+test('selected NPC and individual activity are included in the main story rule', () => {
+    const h = harness();
+    h.scope.saveContacts([{ name: '阿澜', source: { type: 'world', book: '副书', uid: 7 }, level: 'clingy' }], h.c);
+    const prompt = h.prompt();
+    assert.match(prompt, /"阿澜"（黏人/);
+    assert.match(prompt, /"陆"（正常/);
+    assert.deepEqual(Array.from(h.scope.getStoryContacts()), ['陆', '阿澜']);
 });
 test('rules use actual persona and escaped contact names; all five sample messages parse', () => {
     const h = harness(); h.c.characters[0].name = '陆|知行'; const p = h.prompt();

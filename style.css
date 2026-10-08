@@ -626,3 +626,10 @@ html.bb-open body {
 #bluebird-panel .bb-reply-retry { min-height: 44px; padding: 8px 12px; border-radius: 10px; color: var(--bb-accent-strong); background: var(--bb-accent-soft); font-size: 13px; }
 #bluebird-panel .bb-contact-row { display: flex; flex-direction: column; width: 100%; text-align: left; min-height: 64px; }
 #bluebird-panel .bb-phone-settings { display: grid; gap: 18px; }
+
+/* 第五段通讯录提取和逐人设置。 */
+#bluebird-panel .bb-contact-candidate { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+#bluebird-panel .bb-contact-check { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+#bluebird-panel .bb-contact-check input { width: 20px; height: 20px; accent-color: var(--bb-accent); }
+#bluebird-panel .bb-contact-candidate .bb-settings-input { width: 100%; min-height: 44px; }
+#bluebird-panel .bb-contact-open { width: 100%; min-height: 44px; text-align: left; font-weight: 700; color: var(--bb-accent-strong); }

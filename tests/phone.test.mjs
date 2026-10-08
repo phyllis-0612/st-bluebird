@@ -21,10 +21,10 @@ function harness() {
             removeListener(key, fn) { events.set(key, (events.get(key) || []).filter(f => f !== fn)); } },
     };
     context = c;
-    const scope = vm.createContext({ ctx: () => context, getSettings: () => settings, onSettingChanged() {},
+    const scope = vm.createContext({ world_info: {}, ctx: () => context, getSettings: () => settings, onSettingChanged() {},
         setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); },
         crypto: { randomUUID: () => 'id-' + (++serial) }, console, toastr: { error: t => errors.push(t), info: t => errors.push(t) } });
-    vm.runInContext(['messages', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);
+    vm.runInContext(['messages', 'contacts', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);
     scope.rebuildChatState(); scope.initPhoneChat();
     const emit = async (key, ...args) => { for (const fn of events.get(key) || []) await fn(...args); };
     const flush = async delay => { const list = [...timers.entries()].filter(([, t]) => t.delay === delay); for (const [id, t] of list) { timers.delete(id); await t.fn(); } };
@@ -46,7 +46,7 @@ test('sending all five types persists, reloads and does not create story floors;
     h.scope.rebuildChatState(); const messages = h.scope.getChatState().conversations[0].messages;
     assert.equal(messages.length, 5); assert.ok(messages.every(m => m.pending && m.isSelf));
     await assert.rejects(h.scope.sendPhoneMessage('陆', 'transfer', '0'), /金额/);
-    await assert.rejects(h.scope.sendPhoneMessage('别人', 'text', '你好'), /角色卡/);
+    await assert.rejects(h.scope.sendPhoneMessage('别人', 'text', '你好'), /通讯录/);
 });
 
 test('multiple sends make no API calls until one explicit reply request sees the whole conversation', async () => {

@@ -1,6 +1,7 @@
 // 结绳只读适配。正式公开接口随后加入；这里不读取备份，也不写回结绳。
-import { ctx, getSettings } from './settings.js?v=0.4.1';
-import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.4.1';
+import { ctx, getSettings } from './settings.js?v=0.5.0';
+import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.5.0';
+import { readContactSource } from './contacts.js?v=0.5.0';
 
 export function storyBody(text, settings) {
     const masked = hidePhoneTags(maskExcluded(String(text || ''), [...settings.thinkTags, ...settings.statusTags]));
@@ -17,6 +18,21 @@ export function visibleStory(context, settings, hasMemory = false) {
         return body ? [`第${index + 1}楼 ${floor.is_user ? context.name1 || '用户' : floor.name || '剧情'}：\n${body}`] : [];
     });
     return (hasMemory ? floors : floors.slice(-settings.recentStoryCount)).join('\n\n');
+}
+
+/** 未标注楼层继承上一条在场名单；未知状态绝不视为 NPC 在场。 */
+export function witnessedStory(context, settings, name) {
+    let present = null;
+    const floors = [];
+    for (const [index, floor] of (context.chat || []).entries()) {
+        if (!floor) continue;
+        const parsed = parseFloor(floor.mes, { thinkTags: settings.thinkTags });
+        if (parsed.present !== undefined) present = parsed.present;
+        if (!present?.includes(name) || floor.is_system || floor.extra?.asAdvHidden) continue;
+        const body = storyBody(floor.mes, settings);
+        if (body) floors.push(`第${index + 1}楼 ${floor.is_user ? context.name1 || '用户' : floor.name || '剧情'}：\n${body}`);
+    }
+    return floors.slice(-settings.recentStoryCount).join('\n\n');
 }
 
 export async function readKnottedMemory(context) {
@@ -65,19 +81,20 @@ export function phoneReplyLines(output, name, thinkTags) {
 }
 
 export async function buildPhoneRequest(context, contact, conversation, settings = getSettings()) {
-    const card = context.characters?.find(c => c.name?.trim() === contact.name);
-    if (!card) throw new Error('这位联系人不是当前角色卡成员，更多联系人将在第五段开放');
-    const memory = await readKnottedMemory(context);
+    const card = contact.source?.type !== 'world' ? context.characters?.find(c => c.name?.trim() === contact.name) : null;
+    if (!card && contact.source?.type !== 'world') throw new Error('角色卡联系人已不存在');
+    const source = await readContactSource(context, contact);
+    const memory = card ? await readKnottedMemory(context) : null;
     const substitute = text => String(text || '').replace(/\{\{char\}\}/gi, () => contact.name)
         .replace(/\{\{user\}\}/gi, () => context.name1 || '用户');
     const history = conversation.messages.slice(-settings.phoneHistoryCount).map(m => serializeFields(m.fields)).join('\n');
     const prompt = [
         `联系人：${contact.name}；用户：${context.name1 || '用户'}`,
-        '【角色描述】\n' + substitute(card.description || card.data?.description),
-        '【角色性格】\n' + substitute(card.personality || card.data?.personality),
-        '【角色场景】\n' + substitute(card.scenario || card.data?.scenario),
-        `【${memory.source}】\n` + substitute(memory.text || '（无）'),
-        '【实际未隐藏剧情】\n' + visibleStory(context, settings, Boolean(memory.text)),
+        '【角色资料】\n' + substitute(source),
+        ...(card ? [`【${memory.source}】\n` + substitute(memory.text || '（无）'),
+            '【实际未隐藏剧情】\n' + visibleStory(context, settings, Boolean(memory.text))]
+            : ['【你在场时的近期剧情】\n' + witnessedStory(context, settings, contact.name),
+                '你只知道上面这些你在场时发生的事。其他剧情、未在场楼层和全局总结都不是你的记忆。']),
         '【这个会话最近的手机记录】\n' + history,
         `现在以${contact.name}的身份回复用户最新的手机消息。`,
     ].join('\n\n');

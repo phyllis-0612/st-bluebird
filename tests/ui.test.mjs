@@ -23,7 +23,7 @@ function panelHarness() {
     const sent = [], replies = [], status = { phase: 'idle' };
     const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
-        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情', '陆'], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
         ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0 }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
@@ -205,7 +205,7 @@ test('proactive settings persist button choices and numeric values, reject inval
         cooldown.value = value; h.scope.onChange({ target: cooldown }); assert.equal(h.settings.proactiveCooldown, 0); assert.equal(cooldown.value, '0');
     }
     await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
-    assert.equal(h.root.querySelector('.bb-switch-title').textContent, '剧情');
+    assert.equal(h.root.querySelector('.bb-contact-open').textContent, '剧情');
     await h.click(h.root.querySelector('[data-bb-page="settings"]'));
     assert.equal(h.root.querySelector('[data-bb-setting="proactiveEnabled"]').checked, false);
     assert.equal(h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]').find(n => n.value === 'clingy').checked, true);

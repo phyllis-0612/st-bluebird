@@ -14,10 +14,10 @@ function harness() {
     floor.swipes = [floor.mes, '备用'];
     context = { chat: [floor], chatId: 'a', chatMetadata: {}, characters: [{ avatar: 'a.png' }], characterId: 0,
         saveChat: async () => { saves++; }, updateMessageBlock: () => { renders++; } };
-    const scope = vm.createContext({ ctx: () => context, getSettings: () => ({ thinkTags: ['think'] }),
+    const scope = vm.createContext({ world_info: {}, ctx: () => context, getSettings: () => ({ thinkTags: ['think'] }),
         crypto: { randomUUID: () => 'id-' + (++serial) }, console: { ...console, error: (...args) => errors.push(args) },
         setTimeout: fn => { const id = ++serial; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id) });
-    vm.runInContext(source('messages') + '\n' + source('chat-store'), scope);
+    vm.runInContext(source('messages') + '\n' + source('contacts') + '\n' + source('chat-store'), scope);
     const rebuild = () => scope.rebuildChatState();
     const transfer = () => scope.getChatState().conversations[0].messages.find(m => m.type === 'transfer');
     return { scope, floor, rebuild, transfer, timers, context, errors,

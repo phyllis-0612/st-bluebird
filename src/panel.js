@@ -2,15 +2,16 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.4.1';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.4.1';
-import { createEntryModeControl } from './entry-controls.js?v=0.4.1';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.4.1';
-import { scrollToFloor } from './chat-integration.js?v=0.4.1';
-import { fingerprint } from './messages.js?v=0.4.1';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.4.1';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.4.1';
-import { getStoryContacts } from './proactive.js?v=0.4.1';
+import { icons } from './icons.js?v=0.5.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.5.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.5.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.0';
+import { scrollToFloor } from './chat-integration.js?v=0.5.0';
+import { fingerprint } from './messages.js?v=0.5.0';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.0';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.0';
+import { getStoryContacts } from './proactive.js?v=0.5.0';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.0';
 
 let root = null;
 let page = 'list';
@@ -24,6 +25,7 @@ const expandedVoiceIds = new Set();
 const drafts = new Map();
 let attachmentType = null;
 let sending = false;
+let candidates = null, extracting = false;
 function currentDraft() {
     if (!drafts.has(conversationId)) drafts.set(conversationId, { text: '', content: '', note: '' });
     return drafts.get(conversationId);
@@ -244,13 +246,35 @@ function renderConversation() {
 }
 
 function renderContacts() {
-    const names = getStoryContacts();
-    if (!names.length) return emptyState('还没有联系人', '先打开一个角色聊天；从世界书提取更多联系人将在第五段开放。');
     const wrap = el('div', 'bb-settings');
-    wrap.append(el('p', 'bb-switch-hint', '当前使用角色卡联系人，群聊使用未停用的成员。更多联系人将在第五段开放。'));
-    for (const name of names) {
-        const row = el('button', 'bb-entry-setting bb-contact-row'); row.type = 'button'; row.dataset.bbConversation = `name:${name.normalize('NFC')}`;
-        row.append(el('span', 'bb-switch-title', name), el('span', 'bb-switch-hint', '主动程度使用设置页的默认值'));
+    const extract = el('button', 'bb-reply-retry', extracting ? '正在分批提取…' : candidates ? '重新提取' : '从角色卡和绑定世界书提取');
+    extract.type = 'button'; extract.dataset.bbAction = 'extract-contacts'; extract.disabled = extracting || isGenerationBusy();
+    wrap.append(extract);
+    if (candidates) {
+        wrap.append(el('p', 'bb-switch-hint', '确认人物后加入通讯录。可能不是人物的条目默认不勾选。'));
+        for (const [index, item] of candidates.entries()) {
+            const row = el('div', 'bb-entry-setting bb-contact-candidate');
+            const label = el('label', 'bb-contact-check');
+            const input = el('input'); input.type = 'checkbox'; input.checked = item.selected; input.dataset.bbCandidate = String(index);
+            label.append(input, el('span', 'bb-switch-title', item.name)); row.append(label);
+            row.append(el('span', 'bb-switch-hint', `${item.label}${item.person ? '' : ' · 可能不是人物'}`));
+            const level = el('select', 'bb-settings-input'); level.dataset.bbCandidateLevel = String(index);
+            for (const [value, title] of [['restrained', '克制'], ['normal', '正常'], ['clingy', '黏人']]) {
+                const option = el('option', null, title); option.value = value; option.selected = item.level === value; level.append(option);
+            }
+            row.append(level); wrap.append(row);
+        }
+        const add = el('button', 'bb-reply-retry', '加入通讯录'); add.type = 'button'; add.dataset.bbAction = 'add-contacts'; wrap.append(add);
+    }
+    for (const contact of selectedContacts()) {
+        const row = el('div', 'bb-entry-setting bb-contact-candidate');
+        const open = el('button', 'bb-contact-row bb-contact-open', contact.name); open.type = 'button'; open.dataset.bbConversation = `name:${contact.name.normalize('NFC')}`;
+        row.append(open, el('span', 'bb-switch-hint', contact.source.type === 'world' ? `${contact.source.book} · 条目 ${contact.source.uid}` : '角色卡'));
+        const level = el('select', 'bb-settings-input'); level.dataset.bbContactLevel = contact.name;
+        for (const [value, title] of [['restrained', '克制'], ['normal', '正常'], ['clingy', '黏人']]) {
+            const option = el('option', null, title); option.value = value; option.selected = contact.level === value; level.append(option);
+        }
+        row.append(level, el('span', 'bb-switch-hint', '声音设置将在第六段开放'));
         wrap.append(row);
     }
     return wrap;
@@ -395,6 +419,26 @@ async function onClick(event) {
         closePanel();
         return;
     }
+    if (btn.dataset.bbAction === 'extract-contacts') {
+        if (extracting || isGenerationBusy()) return;
+        const owner = captureCurrentChat(); extracting = true; render();
+        try {
+            const result = await extractContacts();
+            if (currentChatMatches(owner)) { candidates = result; if (!result.length) toastr.info('没有提取到联系人，请检查角色卡和绑定世界书'); }
+        } catch (error) { if (currentChatMatches(owner)) toastr.error(error.message || '提取失败，请重试'); }
+        finally { extracting = false; if (isOpen && currentChatMatches(owner)) render(); }
+        return;
+    }
+    if (btn.dataset.bbAction === 'add-contacts') {
+        const picked = (candidates || []).filter(c => c.selected);
+        const saved = selectedContacts().map(c => ({ name: c.name, source: c.source, level: c.level }));
+        for (const item of picked) {
+            const at = saved.findIndex(c => c.name.normalize('NFC') === item.name.normalize('NFC'));
+            const contact = { name: item.name, source: item.source, level: item.level };
+            if (at < 0) saved.push(contact); else if (saved[at].source.type === item.source.type) saved[at] = contact;
+        }
+        saveContacts(saved); candidates = null; rebuildChatState('contacts'); render(); return;
+    }
     if (btn.dataset.bbAction === 'send-text' || btn.dataset.bbAction === 'send-attachment') { await submitPhone(btn.dataset.bbAction === 'send-text'); return; }
     if (btn.dataset.bbAction === 'request-reply') {
         const name = getChatState().conversations.find(c => c.id === conversationId)?.name;
@@ -459,6 +503,12 @@ function onInput(event) {
 function onChange(event) {
     const input = event.target;
     if (input.disabled) return;
+    if (input.dataset?.bbCandidate !== undefined) { if (candidates?.[Number(input.dataset.bbCandidate)]) candidates[Number(input.dataset.bbCandidate)].selected = input.checked; return; }
+    if (input.dataset?.bbCandidateLevel !== undefined) { if (candidates?.[Number(input.dataset.bbCandidateLevel)]) candidates[Number(input.dataset.bbCandidateLevel)].level = input.value; return; }
+    if (input.dataset?.bbContactLevel !== undefined) {
+        const contacts = selectedContacts().map(c => ({ name: c.name, source: c.source, level: c.name === input.dataset.bbContactLevel ? input.value : c.level }));
+        saveContacts(contacts); return;
+    }
     const key = input.dataset?.bbSetting;
     if (!key) return;
     if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneReplyTokens'].includes(key)) {
@@ -583,7 +633,7 @@ export function togglePanel() {
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
     if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
-    if (reason === 'chat') { drafts.clear(); attachmentType = null; conversationId = null; if (page === 'conversation') page = 'list'; }
+    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {
         const body = root.querySelector('.bb-body'), top = body.scrollTop;

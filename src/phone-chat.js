@@ -1,8 +1,9 @@
 // 第四段：后台手机回复和主线暂存快照，所有异步任务绑定原聊天。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.4.1';
-import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.4.1';
-import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.4.1';
-import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.4.1';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.5.0';
+import { storyContacts, parseFloor, serializeFields, activeSwipeKey } from './messages.js?v=0.5.0';
+import { getChatState, getPendingMessages, appendPendingMessages, captureCurrentChat, currentChatMatches, isGenerationBusy, landPendingMessages } from './chat-store.js?v=0.5.0';
+import { buildPhoneRequest, phoneReplyLines } from './phone-memory.js?v=0.5.0';
+import { selectedContacts } from './contacts.js?v=0.5.0';
 
 export const PENDING_PROMPT_KEY = 'bluebird-pending';
 const jobs = new Map(), phoneStatusListeners = new Set();
@@ -25,7 +26,7 @@ function invalidateReplies() {
 function validJob(job) { return jobs.get(job.name) === job && job.epoch === epoch && currentChatMatches(job.owner) && getSettings().enabled; }
 
 export async function sendPhoneMessage(name, type, content, note = '') {
-    if (!getSettings().enabled || !storyContacts(ctx()).includes(name)) throw new Error('当前只能与角色卡联系人聊天');
+    if (!getSettings().enabled || !selectedContacts().some(c => c.name === name)) throw new Error('当前联系人不在通讯录中');
     if (isGenerationBusy()) throw new Error('请等这一轮剧情生成结束后再发手机消息');
     if (getPhoneStatus(name).phase === 'typing') throw new Error('请等这次手机回复结束后再发消息');
     const fields = ['我', type, String(content).trim()];
@@ -39,7 +40,7 @@ export async function sendPhoneMessage(name, type, content, note = '') {
 
 export function requestPhoneReply(name) {
     if (isGenerationBusy()) throw new Error('请等剧情生成结束后再请求手机回复');
-    if (!storyContacts(ctx()).includes(name)) throw new Error('当前联系人已不在角色卡中');
+    if (!selectedContacts().some(c => c.name === name)) throw new Error('当前联系人已不在通讯录中');
     const conversation = getChatState().conversations.find(c => c.name === name);
     if (!conversation?.messages.at(-1)?.pending || !conversation.messages.at(-1)?.isSelf) throw new Error('请先发送一条手机消息');
     if (['waiting', 'typing'].includes(getPhoneStatus(name).phase)) throw new Error('对方正在回复，请稍等');
@@ -59,7 +60,9 @@ async function runReply(job) {
         if (typeof context.generateRaw !== 'function') throw new Error('当前酒馆缺少 generateRaw，请更新酒馆');
         const conversation = getChatState().conversations.find(c => c.name === job.name);
         const settings = { ...getSettings() };
-        const request = await buildPhoneRequest(context, { name: job.name }, conversation, settings);
+        const contact = selectedContacts(context, settings).find(c => c.name === job.name);
+        if (!contact) throw new Error('联系人已从通讯录移除');
+        const request = await buildPhoneRequest(context, contact, conversation, settings);
         if (!validJob(job) || isGenerationBusy()) return;
         // 模型只改带独有标记的这一次请求，不切换酒馆的模型或连接设置。
         const marker = `[青鸟手机请求:${Date.now().toString(36)}-${++serial}]`;
