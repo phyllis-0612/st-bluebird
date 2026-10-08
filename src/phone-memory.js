@@ -1,14 +1,14 @@
 // 结绳只读适配。正式公开接口随后加入；这里不读取备份，也不写回结绳。
-import { ctx, getSettings } from './settings.js?v=0.5.1';
-import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.5.1';
-import { readContactSource } from './contacts.js?v=0.5.1';
+import { ctx, getSettings } from './settings.js?v=0.5.2';
+import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.5.2';
+import { readContactSource } from './contacts.js?v=0.5.2';
 
 export function storyBody(text, settings) {
     const masked = hidePhoneTags(maskExcluded(String(text || ''), [...settings.thinkTags, ...settings.statusTags]));
     const tag = settings.bodyTag;
-    const bodies = [...masked.matchAll(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'gi'))];
+    const bodies = [...masked.matchAll(new RegExp(`<${tag}(?=[\\s/>])[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'giu'))];
     return (bodies.length ? bodies.map(m => m[1]).join('\n') : masked)
-        .replace(/<\/?[a-z][^>]*>/gi, '').trim();
+        .replace(/<\/?[\p{L}][\p{L}\p{N}_-]*(?=[\s/>])[^>]*>/giu, '').trim();
 }
 
 export function visibleStory(context, settings, hasMemory = false) {

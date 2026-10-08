@@ -2,16 +2,16 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.5.1';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION } from './settings.js?v=0.5.1';
-import { createEntryModeControl } from './entry-controls.js?v=0.5.1';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.1';
-import { scrollToFloor } from './chat-integration.js?v=0.5.1';
-import { fingerprint } from './messages.js?v=0.5.1';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.1';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.1';
-import { getStoryContacts } from './proactive.js?v=0.5.1';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.1';
+import { icons } from './icons.js?v=0.5.2';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.5.2';
+import { createEntryModeControl } from './entry-controls.js?v=0.5.2';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.5.2';
+import { scrollToFloor } from './chat-integration.js?v=0.5.2';
+import { fingerprint, detectChatTags } from './messages.js?v=0.5.2';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.5.2';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.5.2';
+import { getStoryContacts } from './proactive.js?v=0.5.2';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.5.2';
 
 let root = null;
 let page = 'list';
@@ -335,7 +335,7 @@ function renderSettings() {
     notice.append(text, toggle);
 
     const thinking = el('label', 'bb-entry-setting');
-    thinking.append(el('span', 'bb-switch-title', '忽略的思考标签'), el('span', 'bb-switch-hint', '逗号分隔标签名，思考中的手机消息不会计入。'));
+    thinking.append(el('span', 'bb-switch-title', '忽略的思考标签'), el('span', 'bb-switch-hint', '可填中文标签名或完整开头标签，用逗号分隔。思考中的手机消息不会计入。'));
     const tagInput = el('input', 'bb-settings-input'); tagInput.type = 'text'; tagInput.value = s.thinkTags.join(', ');
     tagInput.dataset.bbSetting = 'thinkTags'; tagInput.autocapitalize = 'off'; tagInput.spellcheck = false;
     thinking.append(tagInput);
@@ -373,12 +373,25 @@ function renderSettings() {
         ['phoneHistoryCount', '手机回复记录条数', '只限制带给模型的会话记录，不删除暂存消息。', 1, 200],
         ['phoneReplyTokens', '手机回复最大 token', '默认 1024，供短消息回复使用。', 128, 8192],
         ['bodyTag', '剧情正文标签', '默认 content；找不到时使用去除思考、手机和状态块的正文。'],
-        ['statusTags', '排除的状态栏标签', '逗号分隔，不把这些块带给手机回复模型。'],
+        ['statusTags', '排除的状态栏标签', '可手填，也可从下方扫描结果勾选；这些块不会带给手机回复模型。'],
     ]) {
         const field = el('label', 'bb-entry-setting'); field.append(el('span', 'bb-switch-title', title), el('span', 'bb-switch-hint', hint));
         const input = el('input', 'bb-settings-input'); input.type = min === undefined ? 'text' : 'number'; input.value = Array.isArray(s[key]) ? s[key].join(', ') : String(s[key]); input.dataset.bbSetting = key;
         if (min !== undefined) { input.min = String(min); input.max = String(max); input.step = '1'; input.inputMode = 'numeric'; }
         field.append(input); phoneSettings.append(field);
+        if (key === 'statusTags') {
+            const detected = detectChatTags(ctx().chat);
+            const scan = el('div', 'bb-tag-scan');
+            scan.append(el('span', 'bb-switch-title', '当前聊天全文标签'),
+                el('span', 'bb-switch-hint', detected.length ? '扫描当前显示的全部楼层，勾选要从手机回复剧情中排除的标签。' : '当前聊天没有找到成对的文本标签。'));
+            for (const name of detected) {
+                const label = el('label', 'bb-tag-choice');
+                const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.value = name;
+                checkbox.checked = s.statusTags.includes(name); checkbox.dataset.bbStatusTag = name;
+                label.append(checkbox, el('span', null, `<${name}>`)); scan.append(label);
+            }
+            phoneSettings.append(scan);
+        }
     }
     wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, phoneSettings, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
@@ -503,6 +516,15 @@ function onInput(event) {
 function onChange(event) {
     const input = event.target;
     if (input.disabled) return;
+    if (input.dataset?.bbStatusTag !== undefined) {
+        const name = input.dataset.bbStatusTag;
+        const tags = getSettings().statusTags.filter(t => t !== name);
+        if (input.checked) tags.push(name);
+        setSetting('statusTags', tags);
+        const field = root.querySelector('[data-bb-setting="statusTags"]');
+        if (field) field.value = tags.join(', ');
+        return;
+    }
     if (input.dataset?.bbCandidate !== undefined) { if (candidates?.[Number(input.dataset.bbCandidate)]) candidates[Number(input.dataset.bbCandidate)].selected = input.checked; return; }
     if (input.dataset?.bbCandidateLevel !== undefined) { if (candidates?.[Number(input.dataset.bbCandidateLevel)]) candidates[Number(input.dataset.bbCandidateLevel)].level = input.value; return; }
     if (input.dataset?.bbContactLevel !== undefined) {
@@ -512,9 +534,12 @@ function onChange(event) {
     const key = input.dataset?.bbSetting;
     if (!key) return;
     if (['phoneModel', 'bodyTag', 'statusTags', 'recentStoryCount', 'phoneHistoryCount', 'phoneReplyTokens'].includes(key)) {
-        if (key === 'statusTags') setSetting(key, input.value.split(/[,，\s]+/).filter(t => /^[a-z][a-z0-9_-]*$/i.test(t)));
+        if (key === 'statusTags') {
+            const tags = parseTagNames(input.value); setSetting(key, tags); input.value = tags.join(', ');
+            root.querySelectorAll('[data-bb-status-tag]').forEach(node => { node.checked = tags.includes(node.dataset.bbStatusTag); });
+        }
         else if (key === 'phoneModel') setSetting(key, input.value.trim());
-        else if (key === 'bodyTag' && /^[a-z][a-z0-9_-]*$/i.test(input.value.trim())) setSetting(key, input.value.trim());
+        else if (key === 'bodyTag' && normalizeTagName(input.value)) { const name = normalizeTagName(input.value); setSetting(key, name); input.value = name; }
         else if (key !== 'bodyTag' && input.value.trim() && Number.isSafeInteger(Number(input.value)) && Number(input.value) >= Number(input.min) && Number(input.value) <= Number(input.max)) setSetting(key, Number(input.value));
         else { input.value = String(getSettings()[key]); toastr.info('请输入有效的设置值'); }
         return;
@@ -528,7 +553,7 @@ function onChange(event) {
         expandedVoiceIds.clear();
         setSetting('voiceEnabled', input.checked);
     } else if (key === 'thinkTags') {
-        setSetting('thinkTags', input.value.split(/[,，\s]+/).map(s => s.trim().toLowerCase()).filter(s => /^[a-z][a-z0-9_-]*$/.test(s)));
+        const tags = parseTagNames(input.value); setSetting('thinkTags', tags); input.value = tags.join(', ');
     } else if (key === 'proactiveEnabled') {
         setSetting(key, input.checked);
     } else if (key === 'proactiveLevel' && ['restrained', 'normal', 'clingy'].includes(input.value)) {

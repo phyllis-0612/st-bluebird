@@ -2,6 +2,23 @@
 export const DEFAULT_THINK_TAGS = ['think', 'thinking', 'analysis', 'reasoning'];
 const TYPES = new Set(['text', 'voice', 'image', 'transfer', 'location']);
 const STATES = new Set(['accepted', 'returned']);
+const TAG_NAME = /^[\p{L}][\p{L}\p{N}_-]*$/u;
+
+/** 当前聊天每一楼正在显示的原文标签；只展示有开闭配对的标签。 */
+export function detectChatTags(chat) {
+    const paired = new Set();
+    for (const floor of Array.isArray(chat) ? chat : []) {
+        if (typeof floor?.mes !== 'string') continue;
+        const local = new Set();
+        for (const token of floor.mes.matchAll(/<\s*(\/?)\s*([\p{L}][\p{L}\p{N}_-]*)(?=[\s/>])[^>]*>/giu)) {
+            const name = token[2].toLowerCase();
+            if (name.startsWith('bb-')) continue;
+            if (token[1]) { if (local.has(name)) paired.add(name); }
+            else local.add(name);
+        }
+    }
+    return [...paired].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+}
 
 export function fingerprint(text) {
     let a = 2166136261, b = 5381;
@@ -18,9 +35,9 @@ export function maskExcluded(text, thinkTags = DEFAULT_THINK_TAGS) {
     for (const match of text.matchAll(/(^|\n)([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\2\3[^\n]*(?=\n|$)|$)/g)) {
         spans.push([match.index, match.index + match[0].length]);
     }
-    const tags = new Set(thinkTags.map(t => String(t).trim().toLowerCase()).filter(t => /^[a-z][a-z0-9_-]*$/.test(t)));
+    const tags = new Set(thinkTags.map(t => String(t).trim().toLowerCase()).filter(t => TAG_NAME.test(t)));
     let depth = 0, start = 0;
-    for (const token of text.matchAll(/<\s*(\/?)\s*([a-z][a-z0-9_-]*)\b[^>]*>/gi)) {
+    for (const token of text.matchAll(/<\s*(\/?)\s*([\p{L}][\p{L}\p{N}_-]*)(?=[\s/>])[^>]*>/giu)) {
         if (!tags.has(token[2].toLowerCase())) continue;
         if (!token[1]) { if (depth++ === 0) start = token.index; }
         else if (depth > 0 && --depth === 0) spans.push([start, token.index + token[0].length]);

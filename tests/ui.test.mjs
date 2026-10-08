@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { icons } from '../src/icons.js';
-import { buildState, hidePhoneTags, fingerprint } from '../src/messages.js';
+import { buildState, hidePhoneTags, fingerprint, detectChatTags } from '../src/messages.js';
 import { makeDOM } from './dom-helper.mjs';
 
 const source = name => fs.readFileSync(new URL(`../src/${name}.js`, import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace(/export /g, '');
@@ -21,10 +21,12 @@ function panelHarness() {
     for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
     const sent = [], replies = [], status = { phase: 'idle' };
-    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
-        rootNode: root, icons, fingerprint, getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.3.0', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
-        ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0 }), applyThemeEverywhere() {},
+        rootNode: root, icons, fingerprint, detectChatTags, normalizeTagName: value => String(value).replace(/[<>]/g, '').trim(),
+        parseTagNames: value => [...new Set(String(value).split(/[,，\s]+/).map(t => t.replace(/[<>]/g, '').trim()).filter(Boolean))],
+        getStoryContacts: () => ['剧情', '陆'], selectedContacts: () => [{ name: '剧情', source: { type: 'card' }, level: 'normal' }, { name: '陆', source: { type: 'card' }, level: 'normal' }], saveContacts() {}, extractContacts: async () => [], VERSION: '0.5.2', getSettings: () => settings, setSetting: (key, value) => { settings[key] = value; },
+        ctx: () => ({ characters: [{ name: '剧情' }], characterId: 0, chat: [{ mes: '<灵魂疏理>隐秘</灵魂疏理><状态栏>体力 80</状态栏><content>正文</content>' }] }), applyThemeEverywhere() {},
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
         scrollToFloor() {}, processTransfer() {}, getPhoneStatus: () => status, isGenerationBusy: () => false,
@@ -209,6 +211,22 @@ test('proactive settings persist button choices and numeric values, reject inval
     await h.click(h.root.querySelector('[data-bb-page="settings"]'));
     assert.equal(h.root.querySelector('[data-bb-setting="proactiveEnabled"]').checked, false);
     assert.equal(h.root.querySelectorAll('[data-bb-setting="proactiveLevel"]').find(n => n.value === 'clingy').checked, true);
+});
+
+test('Chinese thought tag persists and detected status tag can be checked and unchecked', async () => {
+    const h = panelHarness(); h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    const thought = h.root.querySelector('[data-bb-setting="thinkTags"]'); thought.value = 'think, <灵魂疏理>';
+    h.scope.onChange({ target: thought }); assert.deepEqual(h.settings.thinkTags, ['think', '灵魂疏理']);
+    let status = h.root.querySelector('[data-bb-status-tag="状态栏"]');
+    assert.ok(status); assert.equal(status.checked, false);
+    status.checked = true; h.scope.onChange({ target: status });
+    assert.ok(h.settings.statusTags.includes('状态栏'));
+    assert.match(h.root.querySelector('[data-bb-setting="statusTags"]').value, /状态栏/);
+    await h.click(h.root.querySelector('[data-bb-page="contacts"]'));
+    await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    assert.match(h.root.querySelector('[data-bb-setting="thinkTags"]').value, /灵魂疏理/);
+    status = h.root.querySelector('[data-bb-status-tag="状态栏"]'); assert.equal(status.checked, true);
+    status.checked = false; h.scope.onChange({ target: status }); assert.equal(h.settings.statusTags.includes('状态栏'), false);
 });
 
 test('phone composer preserves drafts on refresh, sends text and transfer, clears only successfully sent fields', async () => {

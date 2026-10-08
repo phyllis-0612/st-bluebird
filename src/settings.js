@@ -1,10 +1,20 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.5.1';
+export const VERSION = '0.5.2';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
+const TAG_NAME = /^[\p{L}][\p{L}\p{N}_-]*$/u;
+
+export function normalizeTagName(value) {
+    const name = String(value || '').trim().replace(/^<\s*\/?\s*/, '').replace(/\s*>$/, '').trim();
+    return TAG_NAME.test(name) ? name.toLowerCase() : '';
+}
+
+export function parseTagNames(value) {
+    return [...new Set(String(value || '').split(/[,，、\s]+/u).map(normalizeTagName).filter(Boolean))];
+}
 
 /** 直接通知插件内部订阅者，避免依赖酒馆全局 DOM 事件。 */
 export function onSettingChanged(listener) {
@@ -58,11 +68,11 @@ export function getSettings() {
     for (const [key, min, max] of [['recentStoryCount', 1, 200], ['phoneHistoryCount', 1, 200], ['phoneReplyTokens', 128, 8192]]) {
         if (!Number.isSafeInteger(s[key]) || s[key] < min || s[key] > max) s[key] = DEFAULTS[key];
     }
-    if (typeof s.bodyTag !== 'string' || !/^[a-z][a-z0-9_-]*$/i.test(s.bodyTag)) s.bodyTag = DEFAULTS.bodyTag;
+    s.bodyTag = normalizeTagName(s.bodyTag) || DEFAULTS.bodyTag;
     if (!Array.isArray(s.statusTags)) s.statusTags = [...DEFAULTS.statusTags];
-    s.statusTags = [...new Set(s.statusTags.filter(t => typeof t === 'string' && /^[a-z][a-z0-9_-]*$/i.test(t)).map(t => t.toLowerCase()))];
+    s.statusTags = [...new Set(s.statusTags.filter(t => typeof t === 'string').map(normalizeTagName).filter(Boolean))];
     if (!Array.isArray(s.thinkTags)) s.thinkTags = [...DEFAULTS.thinkTags];
-    s.thinkTags = [...new Set(s.thinkTags.filter(t => typeof t === 'string' && /^[a-z][a-z0-9_-]*$/i.test(t)).map(t => t.toLowerCase()))];
+    s.thinkTags = [...new Set(s.thinkTags.filter(t => typeof t === 'string').map(normalizeTagName).filter(Boolean))];
     if (!['auto', 'day', 'night'].includes(s.theme)) s.theme = DEFAULTS.theme;
     if (!['floating', 'wand'].includes(s.entryMode)) s.entryMode = DEFAULTS.entryMode;
     const p = s.floatPosition;
