@@ -4,6 +4,15 @@ import { parseFloor, buildState, splitFields, serializeFields, replaceTransferLi
 
 const floor = (mes, id = 'floor-a') => ({ mes, extra: { bluebird: { floorId: id } }, swipe_id: 0 });
 
+test('user phone accepts explicit recipient and legacy blocks, but excludes messages to another phone', () => {
+    const text = '<bb-phone to="我">陆|text|给用户</bb-phone>\n'
+        + '<bb-phone to="鱼仔">周|text|也是给用户</bb-phone>\n'
+        + '<bb-phone to="陆">周|text|给角色</bb-phone>\n'
+        + '<bb-phone>陆|text|旧存档</bb-phone>';
+    assert.deepEqual(parseFloor(text, { viewer: '鱼仔' }).messages.map(m => m.content), ['给用户', '也是给用户', '旧存档']);
+    assert.deepEqual(buildState([floor(text)], { viewer: '鱼仔' }).conversations.map(c => c.name), ['陆', '周']);
+});
+
 test('five message types, states, presence, and malformed lines', () => {
     const result = parseFloor(`<bb-phone>
 陆知行|text|到家没

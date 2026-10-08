@@ -95,12 +95,14 @@ function attributes(text) {
     return attrs;
 }
 
-export function parseFloor(text, { thinkTags = DEFAULT_THINK_TAGS } = {}) {
+export function parseFloor(text, { thinkTags = DEFAULT_THINK_TAGS, viewer = '我' } = {}) {
     text = typeof text === 'string' ? text : '';
     const masked = maskExcluded(text, thinkTags);
     const messages = []; let skipped = 0;
     for (const block of masked.matchAll(/<bb-phone\b([^>]*)>([\s\S]*?)<\/bb-phone\s*>/gi)) {
         const attrs = attributes(block[1]);
+        // 旧楼层没有 to，仍视为用户手机；明确发给其他人的块绝不进入青鸟。
+        if (attrs.to && attrs.to !== '我' && attrs.to !== viewer) continue;
         const contentStart = block.index + block[0].indexOf('>') + 1;
         for (const line of block[2].matchAll(/[^\r\n]+/g)) {
             if (!line[0].trim()) continue;
@@ -147,13 +149,13 @@ export function activeSwipeKey(floor) {
 }
 
 /** mes 是当前正在显示的版本；swipes 可能尚未同步编辑结果，不能反过来覆盖 mes。 */
-export function buildState(chat, { thinkTags = DEFAULT_THINK_TAGS, lastSeen = {} } = {}) {
+export function buildState(chat, { thinkTags = DEFAULT_THINK_TAGS, lastSeen = {}, viewer = '我' } = {}) {
     const conversations = new Map(), floors = new Map(), byId = new Map(), seenSets = new Map();
     let present = null, presentFloor = null, skipped = 0, order = 0;
     for (let floorIndex = 0; floorIndex < chat.length; floorIndex++) {
         const floor = chat[floorIndex];
         if (!floor) continue;
-        const parsed = parseFloor(floor.mes, { thinkTags });
+        const parsed = parseFloor(floor.mes, { thinkTags, viewer });
         skipped += parsed.skipped;
         if (parsed.present !== undefined) { present = parsed.present; presentFloor = floorIndex; }
         const occurrences = new Map();

@@ -44,40 +44,46 @@ test('selected NPC and individual activity are included in the main story rule',
 });
 test('rules use actual persona and escaped contact names; all five sample messages parse', () => {
     const h = harness(); h.c.characters[0].name = '陆|知行'; const p = h.prompt();
-    assert.match(p, /鱼仔/); assert.doesNotMatch(p, /\{\{user\}\}/); assert.match(p, /同场的人不发/);
+    assert.match(p, /鱼仔/); assert.match(p, /青鸟只属于用户/); assert.match(p, /角色与朋友、其他 NPC 之间可以互相发短信/); assert.doesNotMatch(p, /\{\{user\}\}/); assert.match(p, /同场的人不向用户手机发/);
     const sample = parseFloor(p).messages; assert.equal(sample.length, 5); assert.ok(sample.every(m => m.sender === '陆|知行'));
     assert.equal(h.c.chat.length, 0);
 });
 test('cooldown counts intervening user and hidden floors at exact boundary', () => {
     const h = harness(); h.c.chat = [floor(phone), { mes: '一', is_user: true }, { mes: '二', is_system: true }];
     assert.equal(h.scope.cooldownState(h.c.chat, h.settings).remaining, 1); assert.match(h.prompt(), /冷却中/);
-    assert.doesNotMatch(h.prompt(), /<bb-phone>/); h.c.chat.push(floor('三'));
-    assert.equal(h.scope.cooldownState(h.c.chat, h.settings).remaining, 0); assert.match(h.prompt(), /<bb-phone>/);
-    h.settings.proactiveCooldown = 0; h.c.chat = [floor(phone)]; assert.match(h.prompt(), /<bb-phone>/);
+    assert.doesNotMatch(h.prompt(), /<bb-phone to="我">/); h.c.chat.push(floor('三'));
+    assert.equal(h.scope.cooldownState(h.c.chat, h.settings).remaining, 0); assert.match(h.prompt(), /<bb-phone to="我">/);
+    h.settings.proactiveCooldown = 0; h.c.chat = [floor(phone)]; assert.match(h.prompt(), /<bb-phone to="我">/);
 });
 test('phone replies, user examples, thinking, code and malformed blocks do not reset cooldown', () => {
     const h = harness(); h.settings.thinkTags.push('thought');
     h.c.chat = [floor(phone), floor('<bb-phone source="phone" chat="陆">陆|text|回信</bb-phone>'), { mes: phone, is_user: true },
         floor('<thought>' + phone + '</thought>'), floor('```xml\n' + phone + '\n```'), floor('<bb-phone>陆|transfer|错误</bb-phone>')];
-    assert.equal(h.scope.cooldownState(h.c.chat, h.settings).elapsed, 5); assert.match(h.prompt(), /<bb-phone>/);
+    assert.equal(h.scope.cooldownState(h.c.chat, h.settings).elapsed, 5); assert.match(h.prompt(), /<bb-phone to="我">/);
+});
+test('third-party phone messages do not reset the user phone cooldown', () => {
+    const h = harness();
+    h.c.chat = [floor('<bb-phone to="陆">周|text|给陆的消息</bb-phone>')];
+    assert.equal(h.scope.cooldownState(h.c.chat, h.settings, 'normal', h.c.name1).elapsed, null);
+    assert.match(h.prompt(), /<bb-phone to="我">/);
 });
 test('edit, delete and changed mes recalculate without stale swipes', () => {
     const h = harness(); const f = floor(phone); f.swipes = [phone, '另一版']; h.c.chat = [f];
-    assert.match(h.prompt(), /冷却中/); f.mes = '另一版'; assert.match(h.prompt(), /<bb-phone>/);
-    f.mes = phone; h.c.chat = []; assert.match(h.prompt(), /<bb-phone>/);
+    assert.match(h.prompt(), /冷却中/); f.mes = '另一版'; assert.match(h.prompt(), /<bb-phone to="我">/);
+    f.mes = phone; h.c.chat = []; assert.match(h.prompt(), /<bb-phone to="我">/);
 });
 test('swipe omits replaced reply, regenerate uses truncated history, continue avoids duplicate blocks', () => {
     const h = harness(); h.c.chat = [floor('序章'), floor(phone)];
-    assert.match(h.prompt('swipe'), /<bb-phone>/); assert.match(h.prompt('normal'), /冷却中/);
-    h.c.chat.pop(); assert.match(h.prompt('regenerate'), /<bb-phone>/);
-    assert.match(h.prompt('continue'), /不要新增或重复/); assert.doesNotMatch(h.prompt('continue'), /<bb-phone>/);
+    assert.match(h.prompt('swipe'), /<bb-phone to="我">/); assert.match(h.prompt('normal'), /冷却中/);
+    h.c.chat.pop(); assert.match(h.prompt('regenerate'), /<bb-phone to="我">/);
+    assert.match(h.prompt('continue'), /不要新增或重复/); assert.doesNotMatch(h.prompt('continue'), /<bb-phone to="我">/);
 });
 test('switch retains presence and every proactive level forbids same-scene phone messages', () => {
     const h = harness(); h.settings.proactiveEnabled = false;
-    assert.match(h.prompt(), /<bb-present>/); assert.match(h.prompt(), /已关闭/); assert.doesNotMatch(h.prompt(), /<bb-phone>/);
+    assert.match(h.prompt(), /<bb-present>/); assert.match(h.prompt(), /已关闭/); assert.doesNotMatch(h.prompt(), /<bb-phone to="我">/);
     h.settings.proactiveEnabled = true;
     for (const [value, label] of [['restrained', '克制'], ['normal', '正常'], ['clingy', '黏人']]) {
-        h.settings.proactiveLevel = value; assert.match(h.prompt(), new RegExp(label)); assert.match(h.prompt(), /同场的人不发/);
+        h.settings.proactiveLevel = value; assert.match(h.prompt(), new RegExp(label)); assert.match(h.prompt(), /同场的人不向用户手机发/);
     }
     h.settings.enabled = false; assert.equal(h.prompt(), '');
 });
@@ -91,7 +97,7 @@ test('quiet, impersonation, dry-run, stop and chat events clear rules; settings 
     const h = harness(); h.scope.initProactiveMessages(); h.scope.initProactiveMessages(); assert.equal(typeof h.scope.bluebirdGenerationInterceptor, 'function');
     for (const t of ['quiet', 'impersonate', 'unknown']) assert.equal(h.prepare(t)[1], '');
     for (const [n, args] of [['GENERATION_STARTED', ['normal', {}, true]], ['CHAT_CHANGED', []], ['GENERATION_STOPPED', []], ['GENERATION_ENDED', []]]) {
-        assert.match(h.prepare('normal')[1], /<bb-phone>/); h.events.get(n)(...args); assert.equal(h.calls.at(-1)[1], '');
+        assert.match(h.prepare('normal')[1], /<bb-phone to="我">/); h.events.get(n)(...args); assert.equal(h.calls.at(-1)[1], '');
     }
     h.scope.setSetting('proactiveEnabled', false); assert.equal(h.calls.at(-1)[1], ''); assert.match(h.prepare('normal')[1], /已关闭/);
 });

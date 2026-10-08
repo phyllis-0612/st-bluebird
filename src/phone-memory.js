@@ -1,7 +1,7 @@
 // 结绳只读适配。正式公开接口随后加入；这里不读取备份，也不写回结绳。
-import { ctx, getSettings } from './settings.js?v=0.6.0';
-import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.6.0';
-import { readContactSource } from './contacts.js?v=0.6.0';
+import { ctx, getSettings } from './settings.js?v=0.6.1';
+import { maskExcluded, hidePhoneTags, serializeFields, parseFloor } from './messages.js?v=0.6.1';
+import { readContactSource } from './contacts.js?v=0.6.1';
 
 export function storyBody(text, settings) {
     const masked = hidePhoneTags(maskExcluded(String(text || ''), [...settings.thinkTags, ...settings.statusTags]));

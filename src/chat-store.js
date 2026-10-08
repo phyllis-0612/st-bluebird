@@ -1,7 +1,7 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.6.0';
-import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.0';
-import { selectedContacts } from './contacts.js?v=0.6.0';
+import { ctx, getSettings } from './settings.js?v=0.6.1';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.1';
+import { selectedContacts } from './contacts.js?v=0.6.1';
 
 let state = buildState([]);
 let owner = null;
@@ -94,7 +94,7 @@ export function rebuildChatState(reason = 'update') {
     const usedIds = new Set();
     for (const floor of chat) {
         if (!floor || typeof floor.mes !== 'string' || !/<bb-phone\b/i.test(floor.mes)) continue;
-        if (!parseFloor(floor.mes, { thinkTags }).messages.length) continue;
+        if (!parseFloor(floor.mes, { thinkTags, viewer: context.name1 || '我' }).messages.length) continue;
         if (!floor.extra || typeof floor.extra !== 'object' || Array.isArray(floor.extra)) floor.extra = {};
         if (!floor.extra.bluebird || typeof floor.extra.bluebird !== 'object' || Array.isArray(floor.extra.bluebird)) floor.extra.bluebird = {};
         if (Array.isArray(floor.swipes)) {
@@ -127,7 +127,7 @@ export function rebuildChatState(reason = 'update') {
         const swipeId = activeInfoId || (typeof floor.extra.bluebird.swipeId === 'string' && floor.extra.bluebird.swipeId) || newId();
         if (floor.extra.bluebird.swipeId !== swipeId) { floor.extra.bluebird.swipeId = swipeId; newIdentities = true; }
     }
-    state = buildState(chat, { thinkTags, lastSeen: context.chatMetadata?.bluebird?.lastSeen || {} });
+    state = buildState(chat, { thinkTags, viewer: context.name1 || '我', lastSeen: context.chatMetadata?.bluebird?.lastSeen || {} });
     const data = metadata(context);
     for (const { name } of selectedContacts(context)) {
         const id = `name:${name.normalize('NFC')}`;

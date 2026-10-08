@@ -1,7 +1,7 @@
 // 第六段：按点击合成单条语音；凭据从梨园实时读取，不复制进青鸟。
-import { ctx, getSettings } from './settings.js?v=0.6.0';
-import { selectedContacts } from './contacts.js?v=0.6.0';
-import { apiUrl } from './api.js?v=0.6.0';
+import { ctx, getSettings } from './settings.js?v=0.6.1';
+import { selectedContacts } from './contacts.js?v=0.6.1';
+import { apiUrl } from './api.js?v=0.6.1';
 
 const catalogs = { minimax: [], elevenlabs: [] };
 let audioContext = null, currentSource = null, playSerial = 0, currentId = '';
