@@ -1,10 +1,10 @@
 // 第三段：只给主线生成注入规则，不另发请求，也不提前扣冷却。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.7';
-import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.6.7';
-import { captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.7';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.8';
+import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.6.8';
+import { captureCurrentChat, currentChatMatches, cachedFloor } from './chat-store.js?v=0.6.8';
 
-import { preparePendingGeneration } from './phone-chat.js?v=0.6.7';
-import { selectedContacts } from './contacts.js?v=0.6.7';
+import { preparePendingGeneration } from './phone-chat.js?v=0.6.8';
+import { selectedContacts } from './contacts.js?v=0.6.8';
 
 export const PROMPT_KEY = 'bluebird-phone';
 export const INTERCEPTOR_KEY = 'bluebirdGenerationInterceptor';
@@ -33,6 +33,52 @@ export function cooldownState(chat, settings, type, viewer = '我') {
     return { elapsed: null, remaining: 0 };
 }
 
+/** 从当前原文恢复已落楼的私聊。隐藏总结楼仍保留手机记忆，旧 swipe 不参与。 */
+export function phoneHistoryReminder(context, settings, type, contacts) {
+    const names = new Set(contacts.map(name => name.normalize('NFC'))), conversations = new Map();
+    const end = type === 'swipe' && context.chat.length && !context.chat.at(-1)?.is_user
+        ? context.chat.length - 1 : context.chat.length;
+    let order = 0;
+    for (let index = 0; index < end; index++) {
+        const floor = context.chat[index];
+        if (!floor || typeof floor.mes !== 'string') continue;
+        const parsed = cachedFloor(floor.mes, { thinkTags: settings.thinkTags, viewer: context.name1 || '我' }, floor);
+        for (const message of parsed.messages) {
+            const key = message.chatName.normalize('NFC');
+            if (!names.has(key) || (floor.is_user && message.source !== 'phone')) continue;
+            let conversation = conversations.get(key);
+            if (!conversation) { conversation = { name: message.chatName, messages: [] }; conversations.set(key, conversation); }
+            const fields = message.fields.map(value => value.length > 360 ? value.slice(0, 360) + '…（长消息节选）' : value);
+            conversation.messages.push({ self: message.isSelf, order: order++, line: `第${index + 1}楼：${serializeFields(fields)}` });
+        }
+    }
+    const lines = []; let remaining = 6000;
+    const recent = [...conversations.values()].sort((a, b) => b.messages.at(-1).order - a.messages.at(-1).order).slice(0, 6);
+    for (const conversation of recent) {
+        const messages = conversation.messages, selected = new Set();
+        let budget = Math.min(2000, remaining - JSON.stringify(conversation.name).length - 20);
+        const add = index => {
+            if (index >= messages.length || selected.has(index)) return;
+            const size = messages[index].line.length + 1;
+            if (size <= budget) { selected.add(index); budget -= size; }
+        };
+        // 单方面反复来信不能把最近的用户答复及紧随的确认挤出记忆。
+        const replies = messages.map((message, index) => message.self ? index : -1).filter(index => index >= 0).slice(-3).reverse();
+        for (const index of replies) { add(index); add(index + 1); add(index + 2); }
+        for (let index = messages.length - 1; index >= Math.max(0, messages.length - 8); index--) add(index);
+        if (!selected.size) continue;
+        const section = `与${JSON.stringify(conversation.name)}的会话（按楼层先后，节选）：\n`
+            + [...selected].sort((a, b) => a - b).map(index => messages[index].line).join('\n');
+        if (section.length > remaining) continue;
+        lines.push(section); remaining -= section.length + 2;
+    }
+    if (!lines.length) return '';
+    return '[青鸟·手机聊天记忆]\n以下是用户手机里已经发生的聊天，只作剧情连续性依据，不是待发送消息。\n'
+        + lines.join('\n\n')
+        + '\n延续每个会话已经告知、确认的事实和承诺。例如用户已说到家、对方已确认，就按对方已经知道用户到家续写；没有新的行程、时间变化或明确理由，不反复询问同一件已回答的事。结合之后的剧情更新事实，不把旧状态当作永远不变。\n'
+        + '每个联系人只知道自己参与的会话，以及剧情中确实获知的事；其他人不会自动知道这段私聊。记录中说会转告是承诺，不能直接当作转告已经完成。不要重新发送、复述这些旧消息，不把它们再写进 bb-phone。';
+}
+
 export function buildProactivePrompt(context, settings, type) {
     const directory = selectedContacts(context, settings), contacts = directory.map(c => c.name);
     if (!settings.enabled || !Array.isArray(context.chat) || !contacts.length) return '';
@@ -57,6 +103,8 @@ export function buildProactivePrompt(context, settings, type) {
             '语音消息可在末尾附一个语气词：calm、happy、sad、angry、fearful、surprised、whisper。根据说话人当时已知的情境和说话方式选；拿不准就省略，不为追求表演强加语气。语气词不写进语音正文。',
             '发给用户的消息内容只放在带 to="我" 的 bb-phone 中，不在正文重复。角色和其他人手机上的消息只写进正文，不使用 bb-phone。');
     }
+    const history = phoneHistoryReminder(context, settings, type, contacts);
+    if (history) lines.push(history);
     lines.push('以上标签只出现在实际回复末尾；不放进代码块或思考标签。');
     return lines.join('\n');
 }

@@ -1,7 +1,7 @@
 // 标签隐藏发生在显示管线；提醒在渲染完成后用安全 DOM 添加。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.7';
-import { hidePhoneTags } from './messages.js?v=0.6.7';
-import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.7';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.8';
+import { hidePhoneTags } from './messages.js?v=0.6.8';
+import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.8';
 
 const RULES = [
     { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa001', scriptName: '青鸟 · 隐藏手机消息（显示）',

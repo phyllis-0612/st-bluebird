@@ -13,7 +13,7 @@ function harness() {
         eventTypes: Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_CHANGED'].map(n => [n, n])),
         eventSource: { on(n, fn) { events.set(n, fn); } }, setExtensionPrompt(...args) { calls.push(args); } };
     const scope = vm.createContext({ world_info: {}, SillyTavern: { getContext: () => c }, window: { matchMedia: () => ({ matches: false }) },
-        document: { querySelectorAll: () => [] }, parseFloor, serializeFields, storyContacts, preparePendingGeneration() {},
+        document: { querySelectorAll: () => [] }, parseFloor, serializeFields, storyContacts, cachedFloor: parseFloor, preparePendingGeneration() {},
         captureCurrentChat: () => ({ chat: c.chat, id: c.chatId }), currentChatMatches: o => o.chat === c.chat && o.id === c.chatId });
     vm.runInContext(source('settings') + '\n' + source('contacts') + '\n' + source('proactive'), scope);
     const settings = scope.getSettings();
@@ -101,4 +101,49 @@ test('quiet, impersonation, dry-run, stop and chat events clear rules; settings 
         assert.match(h.prepare('normal')[1], /<bb-phone to="我">/); h.events.get(n)(...args); assert.equal(h.calls.at(-1)[1], '');
     }
     h.scope.setSetting('proactiveEnabled', false); assert.equal(h.calls.at(-1)[1], ''); assert.match(h.prepare('normal')[1], /已关闭/);
+});
+
+test('later main generations retain the arrival reply and confirmations despite repeated incoming messages', () => {
+    const h = harness(); h.c.characters[0].name = '陆辞';
+    h.c.chat = Array.from({ length: 19 }, () => floor('剧情'));
+    h.c.chat.push({ is_user: true, extra: { asAdvHidden: true }, mes: '继续剧情\n<bb-phone source="phone" chat="陆辞">\n我|text|到了到了，最近要陪我妈没空看手机，帮我跟队里说一声哈\n陆辞|text|行，知道了。我跟老范说一声\n陆辞|text|群里我替你扣了。好好陪阿姨歇几天\n</bb-phone>' });
+    for (let index = 0; index < 40; index++) h.c.chat.push(floor('<bb-phone>陆辞|text|到滨城了吧？</bb-phone>'));
+    const prompt = h.prepare('normal')[1];
+    assert.match(prompt, /手机聊天记忆/); assert.match(prompt, /第20楼：我\|text\|到了到了/);
+    assert.match(prompt, /行，知道了/); assert.match(prompt, /群里我替你扣了/);
+    assert.match(prompt, /不反复询问同一件已回答的事/); assert.match(prompt, /其他人不会自动知道这段私聊/);
+    assert.match(prompt, /不能直接当作转告已经完成/);
+    assert.equal(h.c.chatMetadata.bluebird, undefined); // 只读原文，不制造另一份存档或调用 API。
+    h.settings.proactiveEnabled = false; assert.match(h.prompt(), /第20楼：我\|text\|到了到了/);
+});
+
+test('recall follows edited, deleted and current swipe history without reading thoughts or third-party phones', () => {
+    const h = harness(); h.settings.thinkTags.push('灵魂疏理');
+    const landed = floor('<bb-phone source="phone" chat="陆">我|text|已到家</bb-phone>');
+    h.c.chat = [landed, floor('<灵魂疏理><bb-phone>陆|text|思考秘密</bb-phone></灵魂疏理>'),
+        floor('```xml\n<bb-phone>陆|text|代码示例</bb-phone>\n```'),
+        floor('<bb-phone to="何">陆|text|他人的私聊</bb-phone>'),
+        { is_user: true, mes: '<bb-phone>陆|text|用户粘贴示例</bb-phone>' },
+        floor('<bb-phone>何|text|不在通讯录</bb-phone>'), floor('<bb-phone>陆|text|被替换的回复</bb-phone>')];
+    const reminder = type => h.scope.phoneHistoryReminder(h.c, h.settings, type, ['陆']);
+    assert.match(reminder('normal'), /已到家/);
+    assert.doesNotMatch(reminder('normal'), /思考秘密|代码示例|他人的私聊|用户粘贴示例|不在通讯录/);
+    assert.doesNotMatch(reminder('swipe'), /被替换的回复/);
+    assert.match(reminder('normal'), /被替换的回复/);
+    landed.swipes = [landed.mes]; landed.mes = '<bb-phone source="phone" chat="陆">我|text|航班改签，明天才到</bb-phone>';
+    assert.match(reminder('normal'), /航班改签/); assert.doesNotMatch(reminder('normal'), /已到家/);
+    h.c.chat.splice(0, 1); assert.doesNotMatch(reminder('normal'), /航班改签/);
+    h.c.chat = []; assert.equal(reminder('normal'), '');
+});
+
+test('large phone histories have a bounded recall and preserve the latest user update', () => {
+    const h = harness(); const names = Array.from({ length: 12 }, (_, index) => '联系人' + index);
+    for (const name of names) {
+        h.c.chat.push(floor(`<bb-phone source="phone" chat="${name}">我|text|最新答复${name}</bb-phone>`));
+        for (let index = 0; index < 30; index++) h.c.chat.push(floor(`<bb-phone>${name}|text|${'长消息'.repeat(800)}</bb-phone>`));
+    }
+    const reminder = h.scope.phoneHistoryReminder(h.c, h.settings, 'normal', names);
+    assert.ok(reminder.length < 6500); assert.match(reminder, /长消息节选/);
+    assert.match(reminder, /最新答复联系人11/); assert.match(reminder, /最新答复联系人10/);
+    assert.doesNotMatch(reminder, /最新答复联系人0\b/);
 });

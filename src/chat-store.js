@@ -1,7 +1,7 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.6.7';
-import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.7';
-import { selectedContacts } from './contacts.js?v=0.6.7';
+import { ctx, getSettings } from './settings.js?v=0.6.8';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.8';
+import { selectedContacts } from './contacts.js?v=0.6.8';
 import { saveChatDebounced as tavernSaveChatDebounced } from '../../../../../script.js';
 
 let state = buildState([]);
@@ -20,7 +20,7 @@ function queueChatSave(context) {
     return true;
 }
 
-function cachedFloor(text, options, floor) {
+export function cachedFloor(text, options, floor) {
     const key = JSON.stringify([options.thinkTags, options.viewer]);
     const old = parsedFloors.get(floor);
     if (old?.text === text && old.key === key) return old.parsed;

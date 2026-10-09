@@ -1,8 +1,8 @@
 // 第五段：联系人目录只存来源引用，世界书正文始终按需读取。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.6.7';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.6.8';
 import { world_info } from '../../../../world-info.js';
-import { storyContacts } from './messages.js?v=0.6.7';
-import { requestBluebirdRaw } from './api.js?v=0.6.7';
+import { storyContacts } from './messages.js?v=0.6.8';
+import { requestBluebirdRaw } from './api.js?v=0.6.8';
 
 const CONTACT_LEVELS = ['restrained', 'normal', 'clingy'];
 const VOICE_PROVIDERS = ['minimax', 'elevenlabs'];

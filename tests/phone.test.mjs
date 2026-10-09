@@ -25,6 +25,7 @@ function harness() {
         setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); },
         crypto: { randomUUID: () => 'id-' + (++serial) }, console, toastr: { error: t => errors.push(t), info: t => errors.push(t) } });
     vm.runInContext(['messages', 'api', 'contacts', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);
+    vm.runInContext('{\n' + source('proactive') + '\nglobalThis.buildProactivePrompt = buildProactivePrompt;\n}', scope);
     scope.rebuildChatState(); scope.initPhoneChat();
     const emit = async (key, ...args) => { for (const fn of events.get(key) || []) await fn(...args); };
     const flush = async delay => { const list = [...timers.entries()].filter(([, t]) => t.delay === delay); for (const [id, t] of list) { timers.delete(id); await t.fn(); } };
@@ -118,6 +119,19 @@ test('stream errors emitting MESSAGE_RECEIVED are rejected; success works when E
     await h.emit('GENERATION_ENDED'); await h.emit('MESSAGE_RECEIVED', 1, 'normal'); await h.flush(0); assert.equal(h.pending().length, 1);
     h.c.chat.pop(); h.c.streamingProcessor = null; h.start(); h.responseFloor(); await h.emit('GENERATION_ENDED'); await h.flush(0);
     await h.emit('MESSAGE_RECEIVED', 1, 'normal'); await h.flush(0); assert.equal(h.pending().length, 0);
+});
+
+test('phone replies remain explicit in later main prompts after pending has landed and cleared', async () => {
+    const h = harness(); h.c.generateRaw = async () => '陆|text|知道你到了，我已经跟队里说了';
+    await h.scope.sendPhoneMessage('陆', 'text', '我已到滨城，最近陪妈妈'); await h.scope.requestPhoneReply('陆');
+    h.c.chat.push({ mes: '继续剧情', is_user: true, extra: {} });
+    h.start(); h.responseFloor(); await h.emit('MESSAGE_RECEIVED', 2, 'normal'); await h.emit('GENERATION_ENDED'); await h.flush(0);
+    assert.equal(h.pending().length, 0); assert.equal(h.prompts.get('bluebird-pending'), '');
+    h.c.chat[1].extra.asAdvHidden = true;
+    h.c.chat.push({ mes: '几段后续剧情', is_user: false });
+    const prompt = h.scope.buildProactivePrompt(h.c, h.settings, 'normal');
+    assert.match(prompt, /我已到滨城，最近陪妈妈/); assert.match(prompt, /知道你到了，我已经跟队里说了/);
+    assert.match(prompt, /不反复询问同一件已回答的事/);
 });
 
 test('landing retains post-snapshot messages and read state, rejects altered target and rolls back failed saves', async () => {
