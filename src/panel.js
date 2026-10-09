@@ -2,18 +2,18 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.6';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.6';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.6';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.6';
-import { scrollToFloor } from './chat-integration.js?v=0.6.6';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.6';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.6';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.6';
-import { getStoryContacts } from './proactive.js?v=0.6.6';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.6';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.6';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.6';
+import { icons } from './icons.js?v=0.6.7';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.7';
+import { createEntryModeControl } from './entry-controls.js?v=0.6.7';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.7';
+import { scrollToFloor } from './chat-integration.js?v=0.6.7';
+import { fingerprint, detectChatTags } from './messages.js?v=0.6.7';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.7';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.7';
+import { getStoryContacts } from './proactive.js?v=0.6.7';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.7';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.7';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.7';
 
 let root = null;
 let page = 'list';
@@ -184,11 +184,93 @@ function renderMessage(message) {
     row.append(bubble); return row;
 }
 
+/** 仅更新变化的消息，保留旧气泡和输入焦点。 */
+function syncConversationMessages(list, conversation) {
+    const old = new Map([...list.children].map(node => [node.dataset.bbRowKey, node]));
+    const rows = [];
+    const voiceEnabled = getSettings().voiceEnabled, playing = playingVoiceId(), readyBySender = new Map();
+    const add = (key, signature, create) => {
+        let node = old.get(key);
+        if (!node || node.dataset.bbRowSignature !== signature) node = create();
+        node.dataset.bbRowKey = key; node.dataset.bbRowSignature = signature; rows.push(node);
+    };
+    let previousFloor = -1;
+    for (const message of conversation.messages) {
+        if (message.pending && previousFloor !== null) {
+            add('pending-divider', '', () => el('p', 'bb-floor-divider', '手机聊天 · 下一轮剧情后保存到楼层'));
+            previousFloor = null;
+        } else if (!message.pending && message.floorIndex !== previousFloor) {
+            const label = `第 ${message.floorIndex + 1} 楼${message.source === 'phone' ? ' · 手机聊天' : ''} ↗`;
+            add(`floor:${message.id}`, label, () => {
+                const divider = el('button', 'bb-floor-divider', label);
+                divider.type = 'button'; divider.dataset.bbFloorMessage = message.id;
+                divider.setAttribute('aria-label', `返回酒馆第 ${message.floorIndex + 1} 楼`); return divider;
+            });
+            previousFloor = message.floorIndex;
+        }
+        if (message.type === 'voice' && !readyBySender.has(message.sender)) readyBySender.set(message.sender, voiceAvailability(message).ready);
+        const signature = JSON.stringify([message.sender, message.type, message.content, message.note, message.status,
+            message.isSelf, message.type === 'voice' ? [voiceEnabled, expandedVoiceIds.has(message.id), playing === message.id, readyBySender.get(message.sender)] : null,
+            message.type === 'transfer' ? transferPending : null]);
+        add(`message:${message.id}`, signature, () => renderMessage(message));
+    }
+    const kept = new Set(rows);
+    for (const node of [...list.children]) if (!kept.has(node)) node.remove();
+    let cursor = list.firstChild;
+    for (const node of rows) {
+        if (node !== cursor) list.insertBefore(node, cursor);
+        cursor = node.nextSibling;
+    }
+}
+
+function updatePhoneStatus(slot, conversation) {
+    slot.replaceChildren();
+    const status = getPhoneStatus(conversation.name);
+    const waitingCount = [...conversation.messages].reverse().findIndex(m => !m.pending || !m.isSelf);
+    const queued = waitingCount < 0 ? conversation.messages.filter(m => m.pending && m.isSelf).length : waitingCount;
+    if (status.phase === 'waiting' || status.phase === 'typing') {
+        const typing = el('p', 'bb-phone-status', '对方正在输入…'); typing.setAttribute('role', 'status'); slot.append(typing);
+    } else if (queued > 0) {
+        const warning = el('div', 'bb-phone-status is-error');
+        warning.append(el('span', '', status.error || `已发 ${queued} 条，等待你让对方回复`));
+        const reply = el('button', 'bb-reply-retry', status.phase === 'error' ? '重试回复' : '让对方回复');
+        reply.type = 'button'; reply.dataset.bbAction = 'request-reply'; reply.disabled = isGenerationBusy() || sending;
+        warning.append(reply); slot.append(warning);
+    }
+}
+
+function refreshConversation() {
+    const wrap = root.querySelector('.bb-chat');
+    const conversation = getChatState().conversations.find(c => c.id === conversationId);
+    if (!wrap || !conversation || wrap.dataset.bbConversation !== conversationId
+        || wrap.dataset.bbAttachmentMode !== (attachmentType || '')) return false;
+    markConversationRead(conversationId);
+    const state = getChatState();
+    const presence = wrap.querySelector('.bb-presence');
+    presence.textContent = state.present === null ? '在场信息未知' : conversation.members.some(name => state.present.includes(name))
+        ? '最近记录：与你同场' : '最近记录：不在你身边';
+    presence.title = state.presentFloor === null ? '' : `来自第 ${state.presentFloor + 1} 楼的在场名单`;
+    syncConversationMessages(wrap.querySelector('.bb-message-list'), conversation);
+    updatePhoneStatus(wrap.querySelector('.bb-phone-status-wrap'), conversation);
+    const status = getPhoneStatus(conversation.name);
+    const allowed = getStoryContacts().includes(conversation.name) && !isGenerationBusy() && !['waiting', 'typing'].includes(status.phase);
+    const draft = currentDraft();
+    for (const input of wrap.querySelectorAll('[data-bb-draft]')) {
+        input.disabled = !allowed;
+        if (input.value !== draft[input.dataset.bbDraft]) input.value = draft[input.dataset.bbDraft];
+    }
+    const input = wrap.querySelector('.bb-compose-input');
+    input.placeholder = allowed ? '发一条消息…' : '等待剧情结束，或选择角色卡联系人';
+    for (const button of wrap.querySelectorAll('.bb-compose-send, .bb-composer-plus')) button.disabled = !allowed || sending;
+    return true;
+}
+
 function renderConversation() {
     markConversationRead(conversationId);
     const state = getChatState(), conversation = state.conversations.find(c => c.id === conversationId);
     if (!conversation) return emptyState('这段会话已没有消息', '对应楼层可能已删除，或当前 swipe 没有手机消息。返回消息页查看其他会话。');
     const wrap = el('div', 'bb-chat');
+    wrap.dataset.bbConversation = conversationId; wrap.dataset.bbAttachmentMode = attachmentType || '';
     const header = el('header', 'bb-chat-header');
     const back = el('button', 'bb-back', '‹'); back.type = 'button'; back.dataset.bbAction = 'back';
     back.setAttribute('aria-label', '返回消息列表');
@@ -199,32 +281,10 @@ function renderConversation() {
     if (state.presentFloor !== null) title.querySelector('.bb-presence').title = `来自第 ${state.presentFloor + 1} 楼的在场名单`;
     header.append(back, title); wrap.append(header);
     const messages = el('div', 'bb-message-list');
-    let previousFloor = -1;
-    for (const message of conversation.messages) {
-        if (message.pending && previousFloor !== null) {
-            messages.append(el('p', 'bb-floor-divider', '手机聊天 · 下一轮剧情后保存到楼层'));
-            previousFloor = null;
-        } else if (!message.pending && message.floorIndex !== previousFloor) {
-            const divider = el('button', 'bb-floor-divider', `第 ${message.floorIndex + 1} 楼${message.source === 'phone' ? ' · 手机聊天' : ''} ↗`);
-            divider.type = 'button'; divider.dataset.bbFloorMessage = message.id;
-            divider.setAttribute('aria-label', `返回酒馆第 ${message.floorIndex + 1} 楼`);
-            messages.append(divider); previousFloor = message.floorIndex;
-        }
-        messages.append(renderMessage(message));
-    }
+    syncConversationMessages(messages, conversation);
     wrap.append(messages);
+    const statusSlot = el('div', 'bb-phone-status-wrap'); updatePhoneStatus(statusSlot, conversation); wrap.append(statusSlot);
     const status = getPhoneStatus(conversation.name);
-    const waitingCount = [...conversation.messages].reverse().findIndex(m => !m.pending || !m.isSelf);
-    const queued = waitingCount < 0 ? conversation.messages.filter(m => m.pending && m.isSelf).length : waitingCount;
-    if (status.phase === 'waiting' || status.phase === 'typing') {
-        const typing = el('p', 'bb-phone-status', '对方正在输入…'); typing.setAttribute('role', 'status'); wrap.append(typing);
-    } else if (queued > 0) {
-        const warning = el('div', 'bb-phone-status is-error');
-        warning.append(el('span', '', status.error || `已发 ${queued} 条，等待你让对方回复`));
-        const reply = el('button', 'bb-reply-retry', status.phase === 'error' ? '重试回复' : '让对方回复');
-        reply.type = 'button'; reply.dataset.bbAction = 'request-reply'; reply.disabled = isGenerationBusy() || sending;
-        warning.append(reply); wrap.append(warning);
-    }
     const allowed = getStoryContacts().includes(conversation.name) && !isGenerationBusy() && !['waiting', 'typing'].includes(status.phase);
     const composeWrap = el('div', 'bb-compose-wrap');
     const draft = currentDraft();
@@ -249,7 +309,7 @@ function renderConversation() {
     }
     const composer = el('div', 'bb-composer');
     const plus = el('button', 'bb-composer-plus', '+'); plus.type = 'button'; plus.disabled = !allowed || sending; plus.dataset.bbAction = 'attachments'; plus.setAttribute('aria-label', '添加语音、转账、图片或定位');
-    const input = el('input', 'bb-compose-input'); input.placeholder = allowed ? '发一条消息…' : '等待剧情结束，或选择角色卡联系人'; input.disabled = !allowed || sending; input.value = draft.text; input.dataset.bbDraft = 'text'; input.setAttribute('aria-label', '手机消息');
+    const input = el('input', 'bb-compose-input'); input.placeholder = allowed ? '发一条消息…' : '等待剧情结束，或选择角色卡联系人'; input.disabled = !allowed; input.value = draft.text; input.dataset.bbDraft = 'text'; input.setAttribute('aria-label', '手机消息');
     const send = el('button', 'bb-compose-send', '发送'); send.type = 'button'; send.dataset.bbAction = 'send-text'; send.disabled = !allowed || sending;
     composer.append(plus, input, send); composeWrap.append(composer); wrap.append(composeWrap);
     return wrap;
@@ -508,6 +568,7 @@ function render() {
         if (active) btn.setAttribute('aria-current', 'page');
         else btn.removeAttribute('aria-current');
     });
+    if (page === 'conversation' && refreshConversation()) return;
     const active = document.activeElement;
     const draftKey = active?.dataset?.bbDraft;
     const selection = draftKey ? [active.selectionStart, active.selectionEnd] : null;
@@ -634,7 +695,8 @@ async function submitPhone(isText) {
     sending = true; render();
     try {
         await sendPhoneMessage(name, type, content, note);
-        if (isText) draft.text = ''; else { draft.content = ''; draft.note = ''; if (conversationId === id && currentChatMatches(owner)) attachmentType = null; }
+        if (isText) { if (draft.text === content) draft.text = ''; }
+        else { if (draft.content === content && draft.note === note) { draft.content = ''; draft.note = ''; if (conversationId === id && currentChatMatches(owner)) attachmentType = null; } }
     } catch (error) { toastr.error(error.message || '发送失败，输入已保留'); }
     finally { sending = false; if (currentChatMatches(owner) && isOpen && conversationId === id) { render(); root.querySelector('.bb-compose-input')?.focus({ preventScroll: true }); } }
 }
@@ -728,7 +790,7 @@ function onChange(event) {
 
 function onKeydown(event) {
     if (!isOpen || event.isComposing) return;
-    if (event.key === 'Enter' && event.target?.classList?.contains('bb-compose-input')) { event.preventDefault(); event.stopPropagation(); submitPhone(true); return; }
+    if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229 && event.target?.classList?.contains('bb-compose-input')) { event.preventDefault(); event.stopPropagation(); submitPhone(true); return; }
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();

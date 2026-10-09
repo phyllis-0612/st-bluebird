@@ -1,4 +1,4 @@
-# 青鸟消息协议 · v0.6.5
+# 青鸟消息协议 · v0.6.7
 
 消息原文是唯一数据来源，存放在酒馆楼层的 `mes`，跟随当前 swipe。第二段只读取、展示与改写转账状态，不调用生成 API。
 
@@ -104,3 +104,9 @@
 v0.6.3 起 `extensionSettings.bluebird.voiceProvider` 决定青鸟所用的语音服务，初次设置默认取梨园当前服务，之后可独立切换。通讯录的 `voice` 为按服务分别保存的 `{ minimax?: voice_id, elevenlabs?: voice_id }`；读取旧版 `{ provider, voiceId }` 时转换为对应服务，两个服务互不覆盖。音色选项实时读取梨园 `voiceBank` 或 `elevenLabsVoices.voiceBank`，无梨园条目时仍可手填 voice_id；对应 Key 继续按原优先级读取。
 
 v0.6.5 起音色选择使用青鸟内部的独立可滚动、可搜索列表，不使用移动端原生 `select`；点击某个条目或「返回通讯录」才关闭列表。v0.6.4 仅移除了原生选择器的立即重建，在部分手机上仍点不到原生选项。「重新读取梨园音色」只重新读取同页 `extensionSettings.playhouse` 中已经保存的音色库，刷新列表并提示数量；它不调用外部音色 API。若梨园自己尚未导入新音色，先去梨园导入。
+
+## v0.6.7 保存与显示
+
+手机暂存发送/回复与已读标记使用酒馆 `saveChatDebounced` 合并保存；扩展上下文未公开此函数时使用 `public/script.js` 的导出。无合并接口的测试宿主回退到 `saveChat`。转账与落楼的原文/暂存事务仍使用可等待的 `saveChat`，保留原回滚规则。
+
+仅修改隐藏 `bb-phone` 的操作不清除 `display_text`，不重绘正文 DOM，避免销毁正则生成的 iframe。初次格式化或开关隐藏规则时优先使用 `TavernHelper.refreshOneMessage`；回退原生 `updateMessageBlock` 后发送对应的 `USER_MESSAGE_RENDERED` / `CHARACTER_MESSAGE_RENDERED` 通知。DOM 观察器只合并刷新正文提醒，手机状态重建由消息事件驱动，原文未变化的楼层使用解析缓存。会话刷新按消息身份更新变化气泡，保留输入框原节点。

@@ -39,15 +39,15 @@ test('stable floor IDs, unread writes preserve other chat metadata and pending r
     h.rebuild(); assert.equal(h.floor.extra.bluebird.floorId, id); assert.equal(h.scope.getChatState().unread, 0);
 });
 
-test('transfer commits only the current swipe, clears display cache and cannot run twice', async () => {
+test('transfer commits only the current swipe, preserves rendered HTML and cannot run twice', async () => {
     const h = harness(); h.rebuild(); const id = h.transfer().id;
     await h.scope.processTransfer(id, 'accepted');
     assert.match(h.floor.mes, /20\|备注\|accepted/);
     assert.equal(h.floor.swipes[0], h.floor.mes); assert.equal(h.floor.swipes[1], '备用');
-    assert.equal(h.floor.extra.display_text, undefined);
+    assert.equal(h.floor.extra.display_text, '旧显示缓存');
     const reloaded = h.scope.buildState(JSON.parse(JSON.stringify(h.context.chat)));
     assert.equal(reloaded.conversations[0].messages.find(m => m.type === 'transfer').status, 'accepted');
-    assert.deepEqual(h.counts(), { saves: 1, renders: 1 });
+    assert.deepEqual(h.counts(), { saves: 1, renders: 0 });
     await assert.rejects(h.scope.processTransfer(id, 'returned'), /已经处理/);
 });
 
@@ -99,12 +99,12 @@ test('old-chat timers cannot save a new chat and copied floors get distinct IDs'
     assert.equal(h.counts().saves, 0);
 });
 
-test('render failure after a successful save does not roll back committed text', async () => {
+test('hidden transfer writes do not redraw story blocks or tear down HTML cards', async () => {
     const h = harness(); h.rebuild();
     h.context.updateMessageBlock = () => { throw Error('render failed'); };
     await h.scope.processTransfer(h.transfer().id, 'accepted');
     assert.match(h.floor.mes, /accepted/);
-    assert.equal(h.errors.length, 1);
+    assert.equal(h.errors.length, 0);
 });
 
 test('native swipe extra replacement and deleting another swipe preserve read identity', () => {
@@ -163,4 +163,27 @@ test('native busy signals protect transfers even if a start event was missed', a
     stop.style.display = 'none';
     await h.scope.processTransfer(h.transfer().id, 'returned');
     assert.match(h.floor.mes, /returned/);
+});
+
+test('unchanged story floors reuse their parsed phone protocol; edited text is parsed again', () => {
+    const h = harness(); let calls = 0;
+    const parse = h.scope.parseFloor;
+    h.scope.parseFloor = (...args) => { calls++; return parse(...args); };
+    h.rebuild(); const first = calls;
+    h.rebuild(); h.rebuild();
+    assert.equal(calls, first);
+    h.floor.mes += '\n<bb-present>陆</bb-present>';
+    h.rebuild(); assert.equal(calls, first + 1);
+    assert.equal(h.scope.getChatState().present[0], '陆');
+});
+
+test('pending sends use Tavern queued saves and do not wait for a full-chat request', async () => {
+    const h = harness(); h.rebuild(); let queued = 0;
+    h.context.saveChat = () => { throw new Error('full-chat write must not block sending'); };
+    h.context.saveChatDebounced = () => { queued++; };
+    await h.scope.appendPendingMessages('陆', [['我', 'text', '第一条']]);
+    await h.scope.appendPendingMessages('陆', [['我', 'text', '第二条']]);
+    assert.equal(queued, 2);
+    assert.equal(h.scope.getPendingMessages().length, 2);
+    assert.equal(h.scope.getChatState().conversations[0].messages.at(-1).content, '第二条');
 });

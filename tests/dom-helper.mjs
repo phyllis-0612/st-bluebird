@@ -16,6 +16,15 @@ export function makeDOM() {
         }
         get isConnected() { return this === document.body || !!this.parent?.isConnected; }
         appendChild(node) { node.remove?.(); node.parent = this; this.children.push(node); return node; }
+        get firstChild() { return this.children[0] || null; }
+        get nextSibling() { return this.parent?.children[this.parent.children.indexOf(this) + 1] || null; }
+        insertBefore(node, before) {
+            if (!before) return this.appendChild(node);
+            if (node === before) return node;
+            node.remove?.(); const index = this.children.indexOf(before);
+            if (index < 0) throw new Error('Reference node is not a child');
+            node.parent = this; this.children.splice(index, 0, node); return node;
+        }
         append(...nodes) { nodes.forEach(node => this.appendChild(node)); }
         replaceChildren(...nodes) { for (const n of this.children) n.parent = null; this.children = []; this._text = ''; this.append(...nodes); }
         remove() { if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this); this.parent = null; }

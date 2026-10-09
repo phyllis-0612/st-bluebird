@@ -1,9 +1,9 @@
 // 青鸟 · 入口：悬浮球 / 魔法棒，互斥显示，不占用输入栏。
 
-import { icons } from './icons.js?v=0.6.6';
-import { getSettings, setSetting, applyThemeEverywhere } from './settings.js?v=0.6.6';
-import { togglePanel, openPanel, closePanel } from './panel.js?v=0.6.6';
-import { createEntryModeControl, syncEntryModeControls } from './entry-controls.js?v=0.6.6';
+import { icons } from './icons.js?v=0.6.7';
+import { getSettings, setSetting, applyThemeEverywhere } from './settings.js?v=0.6.7';
+import { togglePanel, openPanel, closePanel } from './panel.js?v=0.6.7';
+import { createEntryModeControl, syncEntryModeControls } from './entry-controls.js?v=0.6.7';
 
 let entry = null;
 let cleanupEntry = null;

@@ -97,6 +97,7 @@ function attributes(text) {
 
 export function parseFloor(text, { thinkTags = DEFAULT_THINK_TAGS, viewer = '我' } = {}) {
     text = typeof text === 'string' ? text : '';
+    if (!/<bb-(?:phone|present)\b/i.test(text)) return { messages: [], present: undefined, skipped: 0 };
     const masked = maskExcluded(text, thinkTags);
     const messages = []; let skipped = 0;
     for (const block of masked.matchAll(/<bb-phone\b([^>]*)>([\s\S]*?)<\/bb-phone\s*>/gi)) {
@@ -149,13 +150,13 @@ export function activeSwipeKey(floor) {
 }
 
 /** mes 是当前正在显示的版本；swipes 可能尚未同步编辑结果，不能反过来覆盖 mes。 */
-export function buildState(chat, { thinkTags = DEFAULT_THINK_TAGS, lastSeen = {}, viewer = '我' } = {}) {
+export function buildState(chat, { thinkTags = DEFAULT_THINK_TAGS, lastSeen = {}, viewer = '我', parseMessage = parseFloor } = {}) {
     const conversations = new Map(), floors = new Map(), byId = new Map(), seenSets = new Map();
     let present = null, presentFloor = null, skipped = 0, order = 0;
     for (let floorIndex = 0; floorIndex < chat.length; floorIndex++) {
         const floor = chat[floorIndex];
         if (!floor) continue;
-        const parsed = parseFloor(floor.mes, { thinkTags, viewer });
+        const parsed = parseMessage(floor.mes, { thinkTags, viewer }, floor);
         skipped += parsed.skipped;
         if (parsed.present !== undefined) { present = parsed.present; presentFloor = floorIndex; }
         const occurrences = new Map();

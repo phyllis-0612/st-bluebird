@@ -129,17 +129,35 @@ test('notice counts incoming only, opens the conversation, avoids duplicates and
     h.floor.replaceChildren(); h.scope.refreshFloorNotices();
 });
 
-test('DOM observer ignores its own notices but responds to streamed text and swipe events', () => {
+test('DOM animation only refreshes notices; source edits and swipes rebuild phone state', async () => {
     const h = integrationHarness(); h.install();
+    await h.scope.reformatTaggedFloors();
+    for (const fn of h.frames.splice(0)) fn();
     h.scope.refreshFloorNotices(); const notice = h.text.querySelector('.bb-floor-notices');
     const before = h.frames.length;
+    const rebuilds = h.stats().rebuilds;
     h.observers[0].fn([{ type: 'childList', target: h.text, addedNodes: [notice], removedNodes: [] }]);
     assert.equal(h.frames.length, before);
     h.observers[0].fn([{ type: 'characterData', target: { nodeType: 3 }, addedNodes: [], removedNodes: [] }]);
     assert.equal(h.frames.length, before + 1);
+    for (const fn of h.frames.splice(0)) fn();
+    assert.equal(h.stats().rebuilds, rebuilds);
     h.events.get('MESSAGE_SWIPED')();
     for (const fn of h.frames.splice(0)) fn();
-    assert.ok(h.stats().rebuilds >= 2);
+    assert.equal(h.stats().rebuilds, rebuilds + 1);
+});
+
+test('story refresh completes HTML rendering notifications and prefers the helper display API', async () => {
+    const h = integrationHarness(), calls = [];
+    h.data.eventTypes.CHARACTER_MESSAGE_RENDERED = 'character-rendered';
+    h.data.updateMessageBlock = index => calls.push(['format', index]);
+    h.data.eventSource.emit = (event, index) => calls.push([event, index]);
+    await h.scope.reformatTaggedFloors();
+    assert.deepEqual(calls, [['format', 0], ['character-rendered', 0]]);
+    calls.length = 0;
+    h.scope.TavernHelper = { refreshOneMessage: async index => calls.push(['helper', index]) };
+    await h.scope.reformatTaggedFloors();
+    assert.deepEqual(calls, [['helper', 0]]);
 });
 
 test('floor jump uses the current floor object and refuses deleted source floors', async () => {
@@ -283,7 +301,11 @@ test('API presets can be created, filled, selected and deleted without changing 
 test('phone composer preserves drafts on refresh, sends text and transfer, clears only successfully sent fields', async () => {
     const h = panelHarness(); h.scope.openConversation('name:陆');
     const text = h.root.querySelector('.bb-compose-input'); text.value = '正在写的消息'; h.scope.onInput({ target: text });
+    const bubble = h.root.querySelector('.bb-message'); text.focus();
     h.scope.refreshPanel(); assert.equal(h.root.querySelector('.bb-compose-input').value, '正在写的消息');
+    assert.equal(h.root.querySelector('.bb-compose-input'), text);
+    assert.equal(h.root.querySelector('.bb-message'), bubble);
+    assert.equal(h.document.activeElement, text);
     await h.click(h.root.querySelector('[data-bb-action="send-text"]'));
     assert.deepEqual(h.sent[0], ['陆', 'text', '正在写的消息', '']); assert.equal(h.root.querySelector('.bb-compose-input').value, '');
     await h.click(h.root.querySelector('[data-bb-action="attachments"]')); assert.equal(h.root.querySelectorAll('[data-bb-attachment]').length, 4);
@@ -291,6 +313,20 @@ test('phone composer preserves drafts on refresh, sends text and transfer, clear
     for (const [key, value] of [['content', '12.50'], ['note', '车费']]) { const input = h.root.querySelector(`[data-bb-draft="${key}"]`); input.value = value; h.scope.onInput({ target: input }); }
     await h.click(h.root.querySelector('[data-bb-action="send-attachment"]'));
     assert.deepEqual(h.sent[1], ['陆', 'transfer', '12.50', '车费']); assert.equal(h.root.querySelector('.bb-attachment-form'), null);
+});
+
+test('typing the next message during a slow save is retained and IME Enter does not send', async () => {
+    const h = panelHarness(); h.scope.openConversation('name:陆');
+    const input = h.root.querySelector('.bb-compose-input');
+    input.value = '第一条'; h.scope.onInput({ target: input });
+    let finish; h.scope.sendPhoneMessage = () => new Promise(resolve => { finish = resolve; });
+    const sending = h.click(h.root.querySelector('[data-bb-action="send-text"]'));
+    assert.equal(h.root.querySelector('.bb-compose-input'), input);
+    assert.equal(input.disabled, false);
+    input.value = '正在写第二条'; h.scope.onInput({ target: input });
+    finish(); await sending;
+    assert.equal(input.value, '正在写第二条');
+    h.scope.onKeydown({ key: 'Enter', isComposing: true, target: input, preventDefault() { throw new Error('IME was intercepted'); } });
 });
 
 test('reply status and retry affordance survive reload with pending user messages', () => {

@@ -1,7 +1,8 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.6.6';
-import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.6';
-import { selectedContacts } from './contacts.js?v=0.6.6';
+import { ctx, getSettings } from './settings.js?v=0.6.7';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.7';
+import { selectedContacts } from './contacts.js?v=0.6.7';
+import { saveChatDebounced as tavernSaveChatDebounced } from '../../../../../script.js';
 
 let state = buildState([]);
 let owner = null;
@@ -10,6 +11,23 @@ let generationActive = false;
 let generationStartedAt = 0;
 let writing = false;
 const listeners = new Set();
+const parsedFloors = new WeakMap();
+
+function queueChatSave(context) {
+    const save = context.saveChatDebounced || (typeof tavernSaveChatDebounced === 'function' ? tavernSaveChatDebounced : null);
+    if (typeof save !== 'function') return false;
+    save.call(context);
+    return true;
+}
+
+function cachedFloor(text, options, floor) {
+    const key = JSON.stringify([options.thinkTags, options.viewer]);
+    const old = parsedFloors.get(floor);
+    if (old?.text === text && old.key === key) return old.parsed;
+    const parsed = parseFloor(text, options);
+    parsedFloors.set(floor, { text, key, parsed });
+    return parsed;
+}
 
 function chatKey(context) {
     const group = context.groupId !== undefined && context.groupId !== null && context.groupId !== '';
@@ -77,7 +95,10 @@ function saveFloorIdentities(saved) {
         if (!matches(saved)) return;
         // 不在流式生成中保存半成品；结束事件会重新安排。
         if (isGenerationBusy() || writing) { saveFloorIdentities(saved); return; }
-        try { await ctx().saveChat?.(); }
+        try {
+            const context = ctx();
+            if (!queueChatSave(context)) await context.saveChat?.();
+        }
         catch (error) { console.error('[青鸟] 保存消息标识失败', error); }
     }, 600);
 }
@@ -94,7 +115,7 @@ export function rebuildChatState(reason = 'update') {
     const usedIds = new Set();
     for (const floor of chat) {
         if (!floor || typeof floor.mes !== 'string' || !/<bb-phone\b/i.test(floor.mes)) continue;
-        if (!parseFloor(floor.mes, { thinkTags, viewer: context.name1 || '我' }).messages.length) continue;
+        if (!cachedFloor(floor.mes, { thinkTags, viewer: context.name1 || '我' }, floor).messages.length) continue;
         if (!floor.extra || typeof floor.extra !== 'object' || Array.isArray(floor.extra)) floor.extra = {};
         if (!floor.extra.bluebird || typeof floor.extra.bluebird !== 'object' || Array.isArray(floor.extra.bluebird)) floor.extra.bluebird = {};
         if (Array.isArray(floor.swipes)) {
@@ -127,7 +148,7 @@ export function rebuildChatState(reason = 'update') {
         const swipeId = activeInfoId || (typeof floor.extra.bluebird.swipeId === 'string' && floor.extra.bluebird.swipeId) || newId();
         if (floor.extra.bluebird.swipeId !== swipeId) { floor.extra.bluebird.swipeId = swipeId; newIdentities = true; }
     }
-    state = buildState(chat, { thinkTags, viewer: context.name1 || '我', lastSeen: context.chatMetadata?.bluebird?.lastSeen || {} });
+    state = buildState(chat, { thinkTags, viewer: context.name1 || '我', lastSeen: context.chatMetadata?.bluebird?.lastSeen || {}, parseMessage: cachedFloor });
     const data = metadata(context);
     for (const { name } of selectedContacts(context)) {
         const id = `name:${name.normalize('NFC')}`;
@@ -195,15 +216,10 @@ export async function processTransfer(messageId, status) {
     writing = true;
     try {
         afterWrite = replaceTransferLine(floor, target, status);
-        // 旧显示缓存可能属于修改前的文本，只让酒馆重算，不写入自定义 HTML。
-        if (floor.extra) delete floor.extra.display_text;
-        if (info?.extra) delete info.extra.display_text;
+        // 只修改隐藏的手机协议，正文画面和正则 HTML 不需要重绘。
         await context.saveChat();
         savedSuccessfully = true;
         if (matches(saved)) {
-            const floorIndex = context.chat.indexOf(floor);
-            try { context.updateMessageBlock?.(floorIndex, floor); }
-            catch (error) { console.error('[青鸟] 楼层刷新失败', error); }
             rebuildChatState('transfer');
         }
     } catch (error) {
@@ -216,7 +232,6 @@ export async function processTransfer(messageId, status) {
                 if (before.displayText !== undefined && floor.extra) floor.extra.display_text = before.displayText;
             }
             if (matches(saved)) {
-                context.updateMessageBlock?.(context.chat.indexOf(floor), floor);
                 rebuildChatState('transfer');
             }
         }
@@ -237,7 +252,9 @@ export async function appendPendingMessages(chatName, fieldsList, saved = captur
     const records = fieldsList.map(fields => ({ id: `pending:${newId()}`, chatName, fields: [...fields], createdAt: Date.now() }));
     const ids = new Set(records.map(r => r.id));
     data.pending.push(...records); writing = true;
-    try { await context.saveChat(); }
+    try {
+        if (!queueChatSave(context)) await context.saveChat();
+    }
     catch (error) { data.pending = data.pending.filter(r => !ids.has(r.id)); throw error; }
     finally { writing = false; if (matches(saved)) rebuildChatState('pending'); }
     return records;
@@ -265,8 +282,7 @@ export async function landPendingMessages(batch, newFloorIndex) {
     const after = `${target.mes}\n${blocks}`;
     target.mes = after;
     if (Array.isArray(target.swipes)) target.swipes[swipe] = after;
-    if (target.extra) delete target.extra.display_text;
-    if (info?.extra) delete info.extra.display_text;
+    // 新增的 bb-phone 在显示阶段会被隐藏，保留正文 HTML 和显示缓存。
     data.pending = data.pending.filter(r => !ids.has(r.id)); writing = true;
     // 将暂存消息已读状态迁到落楼后的身份，避免凭空变成未读。
     rebuildChatState('landing');
@@ -287,8 +303,6 @@ export async function landPendingMessages(batch, newFloorIndex) {
         throw error;
     } finally { writing = false; }
     if (matches(batch.owner)) {
-        try { context.updateMessageBlock?.(newFloorIndex - 1, target); }
-        catch (error) { console.error('[青鸟] 手机聊天已保存，楼层显示刷新失败', error); }
         rebuildChatState('landed');
     }
     return true;

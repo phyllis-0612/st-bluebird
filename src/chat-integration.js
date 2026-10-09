@@ -1,7 +1,7 @@
 // 标签隐藏发生在显示管线；提醒在渲染完成后用安全 DOM 添加。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.6';
-import { hidePhoneTags } from './messages.js?v=0.6.6';
-import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.6';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.7';
+import { hidePhoneTags } from './messages.js?v=0.6.7';
+import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.7';
 
 const RULES = [
     { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa001', scriptName: '青鸟 · 隐藏手机消息（显示）',
@@ -47,7 +47,7 @@ function scheduleRefresh() {
 
 function scheduleNotices() {
     if (noticeFrame !== null) return;
-    noticeFrame = requestAnimationFrame(() => { noticeFrame = null; refreshFloorNotices(); });
+    noticeFrame = setTimeout(() => { noticeFrame = null; refreshFloorNotices(); }, 100);
 }
 
 export function refreshFloorNotices() {
@@ -85,12 +85,25 @@ export function refreshFloorNotices() {
 }
 
 /** 更新安装前已渲染的标签；只重画当前 DOM 已加载的相关楼层。 */
-export function reformatTaggedFloors() {
+export async function reformatTaggedFloors() {
     const context = ctx();
-    if (typeof context.updateMessageBlock !== 'function') return;
+    const saved = captureCurrentChat();
+    const helper = globalThis.TavernHelper;
+    if (typeof helper?.refreshOneMessage !== 'function' && typeof context.updateMessageBlock !== 'function') return;
     for (const node of document.querySelectorAll('#chat .mes[mesid]')) {
+        if (!currentChatMatches(saved)) return;
         const index = Number(node.getAttribute('mesid')), floor = context.chat?.[index];
-        if (floor && /<bb-(?:phone|present)\b/i.test(floor.mes)) context.updateMessageBlock(index, floor);
+        if (!floor || !/<bb-(?:phone|present)\b/i.test(floor.mes)) continue;
+        try {
+            if (typeof helper?.refreshOneMessage === 'function') await helper.refreshOneMessage(index);
+            else {
+                context.updateMessageBlock(index, floor);
+                const events = context.eventTypes || context.event_types || {};
+                const event = floor.is_user ? events.USER_MESSAGE_RENDERED : events.CHARACTER_MESSAGE_RENDERED;
+                // 完成酒馆显示管线后通知 HTML 渲染扩展，避免留下代码块。
+                if (event) await context.eventSource?.emit?.(event, index);
+            }
+        } catch (error) { console.error('[青鸟] 楼层显示刷新失败', error); }
     }
     scheduleNotices();
 }
@@ -104,11 +117,12 @@ function bindChatDOM() {
             if (records.every(record => record.target.closest?.('.bb-floor-notices')
                 || (record.type === 'childList' && record.addedNodes.length + record.removedNodes.length > 0
                     && [...record.addedNodes, ...record.removedNodes].every(node => node.nodeType === 1 && node.classList?.contains('bb-floor-notices'))))) return;
-            scheduleRefresh();
+            // DOM 变化包括 HTML 卡面、流式文字和动画；只补提醒。
+            // 消息原文的变化由酒馆消息事件驱动，避免每帧扫描全聊天。
+            scheduleNotices();
         });
         chatObserver.observe(chat, { childList: true, subtree: true, characterData: true });
         hostObserver?.disconnect(); hostObserver = null;
-        reformatTaggedFloors();
     } else if (!chat && !hostObserver) {
         hostObserver = new MutationObserver(bindChatDOM);
         hostObserver.observe(document.body, { childList: true, subtree: true });
@@ -142,7 +156,7 @@ export function initChatIntegration(onOpenConversation) {
     for (const name of ['APP_READY', 'APP_INITIALIZED']) on(name, () => {
         installFormatterHook(); bindChatDOM(); rebuildChatState(); reformatTaggedFloors();
     });
-    rebuildChatState(); bindChatDOM();
+    rebuildChatState(); bindChatDOM(); reformatTaggedFloors();
 }
 
 export async function scrollToFloor(message) {
