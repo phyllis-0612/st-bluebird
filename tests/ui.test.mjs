@@ -336,6 +336,43 @@ test('API presets can be created, filled, selected and deleted without changing 
     assert.equal(h.settings.activeApiPresetId, 'tavern');
 });
 
+test('API models use an internal searchable scroll sheet and reliably save a tapped model', async () => {
+    const h = panelHarness(); h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    await h.click(h.root.querySelector('[data-bb-action="api-new"]'));
+    const models = Array.from({ length: 45 }, (_, i) => `gemini-3.${i}-preview`);
+    h.scope.listApiModels = async () => models;
+    await h.click(h.root.querySelector('[data-bb-action="api-models"]'));
+    assert.equal(h.root.querySelector('[data-bb-api-model-choice]'), null);
+    assert.equal(h.root.querySelector('.bb-model-picker').getAttribute('role'), 'dialog');
+    assert.equal(h.root.querySelector('.bb-phone').inert, true);
+    assert.equal(h.root.querySelectorAll('[data-bb-model-choice]').length, 45);
+    const search = h.root.querySelector('[data-bb-model-query]'); search.value = '3.38'; h.scope.onInput({ target: search });
+    const choice = name => h.root.querySelectorAll('[data-bb-model-choice]').find(node => node.dataset.bbModelChoice === name);
+    assert.equal(choice('gemini-3.1-preview').hidden, true);
+    assert.equal(choice('gemini-3.38-preview').hidden, false);
+    await h.click(choice('gemini-3.38-preview'));
+    assert.equal(h.settings.apiPresets[0].model, 'gemini-3.38-preview');
+    assert.equal(h.root.querySelector('.bb-model-picker'), null);
+    assert.equal(h.root.querySelector('.bb-phone').inert, false);
+    assert.equal(h.root.querySelector('[data-bb-api-field="model"]').value, 'gemini-3.38-preview');
+    await h.click(h.root.querySelector('[data-bb-action="open-model-picker"]'));
+    assert.equal(choice('gemini-3.38-preview').getAttribute('aria-pressed'), 'true');
+    await h.click(h.root.querySelector('[data-bb-action="close-model-picker"]'));
+    const manual = h.root.querySelector('[data-bb-api-field="model"]'); manual.value = 'custom-model'; h.scope.onChange({ target: manual });
+    assert.equal(h.settings.apiPresets[0].model, 'custom-model');
+});
+
+test('API model results are discarded if the preset changes while fetching', async () => {
+    const h = panelHarness(); h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    await h.click(h.root.querySelector('[data-bb-action="api-new"]'));
+    let resolve; h.scope.listApiModels = () => new Promise(done => { resolve = done; });
+    const fetching = h.click(h.root.querySelector('[data-bb-action="api-models"]'));
+    await h.click(h.root.querySelector('[data-bb-action="api-copy"]'));
+    resolve(['stale-model']); await fetching;
+    assert.equal(h.root.querySelector('.bb-model-picker'), null);
+    assert.equal(h.root.querySelector('[data-bb-action="open-model-picker"]'), null);
+});
+
 test('phone composer preserves drafts on refresh, sends text and transfer, clears only successfully sent fields', async () => {
     const h = panelHarness(); h.scope.openConversation('name:陆');
     const text = h.root.querySelector('.bb-compose-input'); text.value = '正在写的消息'; h.scope.onInput({ target: text });

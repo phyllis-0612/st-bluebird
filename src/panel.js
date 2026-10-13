@@ -2,19 +2,19 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.7.0';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.7.0';
-import { createEntryModeControl } from './entry-controls.js?v=0.7.0';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.7.0';
-import { scrollToFloor } from './chat-integration.js?v=0.7.0';
-import { fingerprint, detectChatTags } from './messages.js?v=0.7.0';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.7.0';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.7.0';
-import { getStoryContacts } from './proactive.js?v=0.7.0';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.7.0';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.7.0';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.7.0';
-import { SOCIAL_PLATFORMS, socialState, socialFriends, setSocialFriend, socialTokenEstimate, refreshSocial, actOnSocialPost } from './social.js?v=0.7.0';
+import { icons } from './icons.js?v=0.7.1';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.7.1';
+import { createEntryModeControl } from './entry-controls.js?v=0.7.1';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.7.1';
+import { scrollToFloor } from './chat-integration.js?v=0.7.1';
+import { fingerprint, detectChatTags } from './messages.js?v=0.7.1';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.7.1';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.7.1';
+import { getStoryContacts } from './proactive.js?v=0.7.1';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.7.1';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.7.1';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.7.1';
+import { SOCIAL_PLATFORMS, socialState, socialFriends, setSocialFriend, socialTokenEstimate, refreshSocial, actOnSocialPost } from './social.js?v=0.7.1';
 
 let root = null;
 let page = 'list';
@@ -31,6 +31,7 @@ let sending = false;
 let candidates = null, extracting = false;
 let voicePickerFor = null;
 let presetModels = [];
+let modelPickerFor = null, modelLoading = false;
 let socialPlatform = 'moments', socialPostKey = null, socialDraft = '', socialFriendDraft = '', socialBusy = false;
 function persistContactVoice(name, voiceId) {
     const provider = getSettings().voiceProvider;
@@ -515,6 +516,29 @@ function renderVoicePicker() {
     sheet.append(list); overlay.append(sheet); return overlay;
 }
 
+/** 模型列表使用青鸟自己的可滚动弹层，不让移动端原生 select 接管触摸。 */
+function renderModelPicker() {
+    const preset = activeApiPreset();
+    if (!preset || preset.id !== modelPickerFor || !presetModels.length) { modelPickerFor = null; return null; }
+    const overlay = el('div', 'bb-voice-picker bb-model-picker');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '选择青鸟 API 模型');
+    const sheet = el('div', 'bb-voice-picker-sheet');
+    const header = el('div', 'bb-voice-picker-header');
+    header.append(el('strong', null, `${preset.name} · 选择模型`));
+    const close = el('button', 'bb-reply-retry', '返回设置'); close.type = 'button'; close.dataset.bbAction = 'close-model-picker'; header.append(close);
+    sheet.append(header);
+    const search = el('input', 'bb-settings-input bb-voice-search'); search.type = 'search'; search.placeholder = '搜索模型名称或 ID';
+    search.dataset.bbModelQuery = ''; search.setAttribute('aria-label', '搜索模型'); sheet.append(search);
+    const list = el('div', 'bb-voice-picker-list');
+    for (const name of presetModels) {
+        const option = el('button', 'bb-voice-option', name); option.type = 'button';
+        option.dataset.bbModelChoice = name; option.dataset.bbModelSearchText = name.toLocaleLowerCase();
+        option.setAttribute('aria-pressed', String(name === preset.model)); list.append(option);
+    }
+    const empty = el('p', 'bb-switch-hint', '没有匹配的模型'); empty.hidden = true; empty.dataset.bbModelEmpty = ''; list.append(empty);
+    sheet.append(list); overlay.append(sheet); return overlay;
+}
+
 function settingsChoices(title, key, current, choices) {
     const field = el('fieldset', 'bb-field');
     field.append(el('legend', 'bb-field-label', title));
@@ -622,11 +646,11 @@ function renderSettings() {
             const input = el('input', 'bb-settings-input'); input.type = field === 'apiKey' ? 'password' : 'text';
             input.value = active[field] || ''; input.placeholder = placeholder; input.dataset.bbApiField = field; label.append(input); api.append(label);
         }
-        const models = el('button', 'bb-reply-retry', '获取模型列表'); models.type = 'button'; models.dataset.bbAction = 'api-models'; api.append(models);
+        const models = el('button', 'bb-reply-retry', modelLoading ? '正在获取模型…' : '获取模型列表');
+        models.type = 'button'; models.dataset.bbAction = 'api-models'; models.disabled = modelLoading; api.append(models);
         if (presetModels.length) {
-            const choices = el('select', 'bb-settings-input'); choices.dataset.bbApiModelChoice = '';
-            for (const name of ['', ...presetModels]) { const option = el('option', null, name || '从列表选择'); option.value = name; choices.append(option); }
-            api.append(choices);
+            const choose = el('button', 'bb-voice-choose', `从列表选择 · ${presetModels.length} 个模型`);
+            choose.type = 'button'; choose.dataset.bbAction = 'open-model-picker'; api.append(choose);
         }
     }
     phoneSettings.append(api);
@@ -702,7 +726,8 @@ function render() {
     const selection = draftKey ? [active.selectionStart, active.selectionEnd] : null;
     root.querySelector('.bb-body').replaceChildren(pages[page]());
     root.querySelector('.bb-voice-picker')?.remove();
-    const picker = page === 'contacts' && voicePickerFor ? renderVoicePicker() : null;
+    const picker = page === 'contacts' && voicePickerFor ? renderVoicePicker()
+        : page === 'settings' && modelPickerFor ? renderModelPicker() : null;
     root.querySelector('.bb-phone').inert = Boolean(picker);
     if (picker) root.append(picker);
     if (draftKey) {
@@ -758,6 +783,17 @@ async function onClick(event) {
         return;
     }
     if (btn.dataset.bbAction === 'close-voice-picker') { voicePickerFor = null; render(); return; }
+    if (btn.dataset.bbAction === 'close-model-picker') { modelPickerFor = null; render(); return; }
+    if (btn.dataset.bbAction === 'open-model-picker') {
+        modelPickerFor = activeApiPreset()?.id || null; render();
+        root.querySelector('[data-bb-action="close-model-picker"]')?.focus({ preventScroll: true }); return;
+    }
+    if (btn.dataset.bbModelChoice !== undefined) {
+        const current = activeApiPreset();
+        if (!current || current.id !== modelPickerFor || !presetModels.includes(btn.dataset.bbModelChoice)) return;
+        saveApiPresets(getSettings().apiPresets.map(p => p.id === current.id ? { ...p, model: btn.dataset.bbModelChoice } : p), current.id);
+        modelPickerFor = null; render(); return;
+    }
     if (btn.dataset.bbVoicePicker !== undefined) { voicePickerFor = btn.dataset.bbVoicePicker; render(); return; }
     if (btn.dataset.bbVoiceChoice !== undefined) {
         if (voicePickerFor !== btn.dataset.bbVoiceContact) return;
@@ -774,11 +810,29 @@ async function onClick(event) {
                 id: `bb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}` };
             if (copy) item.name += ' 副本'; list.push(item); activeId = item.id;
         }
-        presetModels = []; saveApiPresets(list, activeId); render(); return;
+        presetModels = []; modelPickerFor = null; saveApiPresets(list, activeId); render(); return;
     }
     if (btn.dataset.bbAction === 'api-models') {
-        try { presetModels = await listApiModels(activeApiPreset()); render(); if (!presetModels.length) toastr.info('接口未返回模型列表，可手动填写模型 ID'); }
-        catch (error) { toastr.error(error.message); } return;
+        if (modelLoading) return;
+        const preset = activeApiPreset(); if (!preset) return;
+        const { id, baseUrl, apiKey } = preset;
+        modelLoading = true; render();
+        try {
+            const names = await listApiModels(preset);
+            const current = activeApiPreset();
+            if (!isOpen || page !== 'settings' || !current || current.id !== id || current.baseUrl !== baseUrl || current.apiKey !== apiKey) return;
+            presetModels = names;
+            modelPickerFor = names.length ? id : null;
+            if (!names.length) toastr.info('接口未返回模型列表，可手动填写模型 ID');
+        } catch (error) { toastr.error(error.message); }
+        finally {
+            modelLoading = false;
+            if (isOpen && page === 'settings') {
+                render();
+                if (modelPickerFor) root.querySelector('[data-bb-action="close-model-picker"]')?.focus({ preventScroll: true });
+            }
+        }
+        return;
     }
     if (btn.dataset.bbAction === 'extract-contacts') {
         if (extracting || isGenerationBusy()) return;
@@ -869,6 +923,13 @@ async function submitPhone(isText) {
 }
 
 function onInput(event) {
+    if (event.target.dataset?.bbModelQuery !== undefined) {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        const choices = root.querySelectorAll('[data-bb-model-choice]');
+        for (const choice of choices) choice.hidden = !choice.dataset.bbModelSearchText.includes(query);
+        const empty = root.querySelector('[data-bb-model-empty]'); if (empty) empty.hidden = choices.some(choice => !choice.hidden);
+        return;
+    }
     if (event.target.dataset?.bbSocialDraft !== undefined) { socialDraft = event.target.value; return; }
     if (event.target.dataset?.bbSocialFriendDraft !== undefined) { socialFriendDraft = event.target.value; return; }
     if (event.target.dataset?.bbVoiceQuery !== undefined) {
@@ -893,14 +954,14 @@ function onChange(event) {
         setSocialFriend(input.dataset.bbSocialFriend, input.checked); render(); return;
     }
     if (input.dataset?.bbApiSelect !== undefined) {
-        presetModels = []; setSetting('activeApiPresetId', input.value); render(); return;
+        presetModels = []; modelPickerFor = null; setSetting('activeApiPresetId', input.value); render(); return;
     }
-    if (input.dataset?.bbApiField !== undefined || input.dataset?.bbApiModelChoice !== undefined) {
-        const field = input.dataset.bbApiModelChoice !== undefined ? 'model' : input.dataset.bbApiField;
-        if (field === 'model' && !input.value) return;
+    if (input.dataset?.bbApiField !== undefined) {
+        const field = input.dataset.bbApiField;
         const current = activeApiPreset(); if (!current) return;
         saveApiPresets(getSettings().apiPresets.map(p => p.id === current.id ? { ...p, [field]: input.value.trim() } : p), current.id);
-        if (field === 'name' || input.dataset.bbApiModelChoice !== undefined) render(); return;
+        if (field === 'baseUrl' || field === 'apiKey') { presetModels = []; modelPickerFor = null; }
+        if (field === 'name') render(); return;
     }
     if (input.dataset?.bbTtsProvider !== undefined) {
         const key = input.dataset.bbTtsProvider === 'minimax' ? 'ttsMiniMax' : 'ttsElevenLabs';
@@ -972,7 +1033,7 @@ function onKeydown(event) {
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        if (voicePickerFor) { voicePickerFor = null; render(); }
+        if (voicePickerFor || modelPickerFor) { voicePickerFor = null; modelPickerFor = null; render(); }
         else closePanel();
     } else if (event.key === 'Tab') {
         const controls = focusableControls();
@@ -1042,6 +1103,7 @@ export function closePanel() {
     root.hidden = true;
     isOpen = false;
     voicePickerFor = null;
+    modelPickerFor = null;
     root.querySelector('.bb-voice-picker')?.remove();
     root.querySelector('.bb-phone').inert = false;
     document.documentElement.classList.remove('bb-open');
@@ -1062,7 +1124,7 @@ export function togglePanel() {
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
     if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
-    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; voicePickerFor = null; socialPostKey = null; socialDraft = ''; socialFriendDraft = ''; if (page === 'conversation') page = 'list'; }
+    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; voicePickerFor = null; modelPickerFor = null; socialPostKey = null; socialDraft = ''; socialFriendDraft = ''; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {
         const body = root.querySelector('.bb-body'), top = body.scrollTop;

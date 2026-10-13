@@ -1,11 +1,11 @@
 // 第三段：只给主线生成注入规则，不另发请求，也不提前扣冷却。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.7.0';
-import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.7.0';
-import { captureCurrentChat, currentChatMatches, cachedFloor } from './chat-store.js?v=0.7.0';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.7.1';
+import { parseFloor, serializeFields, storyContacts } from './messages.js?v=0.7.1';
+import { captureCurrentChat, currentChatMatches, cachedFloor } from './chat-store.js?v=0.7.1';
 
-import { preparePendingGeneration } from './phone-chat.js?v=0.7.0';
-import { selectedContacts } from './contacts.js?v=0.7.0';
-import { buildSocialPrompt } from './social.js?v=0.7.0';
+import { preparePendingGeneration } from './phone-chat.js?v=0.7.1';
+import { selectedContacts } from './contacts.js?v=0.7.1';
+import { buildSocialPrompt } from './social.js?v=0.7.1';
 
 export const PROMPT_KEY = 'bluebird-phone';
 export const INTERCEPTOR_KEY = 'bluebirdGenerationInterceptor';

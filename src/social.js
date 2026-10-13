@@ -1,9 +1,9 @@
 // 社交页面只读取当前聊天原文。帖子是剧情事件，页面结构由青鸟绘制。
-import { ctx, getSettings, setSetting } from './settings.js?v=0.7.0';
-import { maskExcluded, activeSwipe, activeSwipeKey } from './messages.js?v=0.7.0';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy, rebuildChatState } from './chat-store.js?v=0.7.0';
-import { visibleStory } from './phone-memory.js?v=0.7.0';
-import { requestBluebirdRaw } from './api.js?v=0.7.0';
+import { ctx, getSettings, setSetting } from './settings.js?v=0.7.1';
+import { maskExcluded, activeSwipe, activeSwipeKey } from './messages.js?v=0.7.1';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy, rebuildChatState } from './chat-store.js?v=0.7.1';
+import { visibleStory } from './phone-memory.js?v=0.7.1';
+import { requestBluebirdRaw } from './api.js?v=0.7.1';
 
 export const SOCIAL_PLATFORMS = Object.freeze({ moments: '朋友圈', weibo: '微博', forum: '论坛', video: '视频' });
 const KINDS = new Set(['post', 'comment', 'like', 'unlike']);
