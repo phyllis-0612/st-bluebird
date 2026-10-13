@@ -1,7 +1,7 @@
 // 标签隐藏发生在显示管线；提醒在渲染完成后用安全 DOM 添加。
-import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.6.8';
-import { hidePhoneTags } from './messages.js?v=0.6.8';
-import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.6.8';
+import { ctx, getSettings, onSettingChanged } from './settings.js?v=0.7.0';
+import { hidePhoneTags } from './messages.js?v=0.7.0';
+import { getChatState, rebuildChatState, setGenerationActive, onChatStateChanged, captureCurrentChat, currentChatMatches } from './chat-store.js?v=0.7.0';
 
 const RULES = [
     { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa001', scriptName: '青鸟 · 隐藏手机消息（显示）',
@@ -10,6 +10,8 @@ const RULES = [
         findRegex: '/<bb-present\\b[^>]*>[\\s\\S]*?(?:<\\/bb-present\\s*>|$)/gi', markdownOnly: true, promptOnly: false },
     { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa003', scriptName: '青鸟 · 移除在场名单（提示词）',
         findRegex: '/<bb-present\\b[^>]*>[\\s\\S]*?<\\/bb-present\\s*>/gi', markdownOnly: false, promptOnly: true },
+    { id: '374d0d58-fd6a-4a2d-a798-51c67b9aa004', scriptName: '青鸟 · 隐藏社交事件（显示）',
+        findRegex: '/<bb-social\\b[^>]*>[\\s\\S]*?(?:<\\/bb-social\\s*>|$)/gi', markdownOnly: true, promptOnly: false },
 ];
 let installed = false, hookInstalled = false;
 let scheduled = null, noticeFrame = null;
@@ -93,7 +95,7 @@ export async function reformatTaggedFloors() {
     for (const node of document.querySelectorAll('#chat .mes[mesid]')) {
         if (!currentChatMatches(saved)) return;
         const index = Number(node.getAttribute('mesid')), floor = context.chat?.[index];
-        if (!floor || !/<bb-(?:phone|present)\b/i.test(floor.mes)) continue;
+        if (!floor || !/<bb-(?:phone|present|social)\b/i.test(floor.mes)) continue;
         try {
             if (typeof helper?.refreshOneMessage === 'function') await helper.refreshOneMessage(index);
             else {

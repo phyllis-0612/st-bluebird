@@ -21,7 +21,7 @@ function harness() {
             removeListener(key, fn) { events.set(key, (events.get(key) || []).filter(f => f !== fn)); } },
     };
     context = c;
-    const scope = vm.createContext({ world_info: {}, ctx: () => context, getSettings: () => settings, onSettingChanged() {},
+    const scope = vm.createContext({ world_info: {}, ctx: () => context, getSettings: () => settings, onSettingChanged() {}, buildSocialPrompt: () => '',
         setTimeout(fn, delay) { const id = ++serial; timers.set(id, { fn, delay }); return id; }, clearTimeout(id) { timers.delete(id); },
         crypto: { randomUUID: () => 'id-' + (++serial) }, console, toastr: { error: t => errors.push(t), info: t => errors.push(t) } });
     vm.runInContext(['messages', 'api', 'contacts', 'chat-store', 'phone-memory', 'phone-chat'].map(source).join('\n'), scope);

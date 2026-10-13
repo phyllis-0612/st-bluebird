@@ -189,7 +189,7 @@ html.bb-open body {
 #bluebird-panel .bb-tabs {
     flex: none;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     padding: 4px 8px 10px;
     border-top: 1px solid var(--bb-line);
     background: var(--bb-bg);
@@ -653,3 +653,39 @@ html.bb-open body {
 #bluebird-panel .bb-api-settings .bb-entry-setting { margin: 0; padding: 8px 0; }
 #bluebird-panel .bb-api-controls { display: flex; flex-wrap: wrap; gap: 8px; }
 #bluebird-panel .bb-api-settings .bb-reply-retry { align-self: flex-start; }
+
+/* 社区内容保持手机页的排版和触屏滚动；帖子由原生 DOM 文本节点绘制。 */
+#bluebird-panel .bb-social { display: flex; flex-direction: column; gap: 13px; min-height: 100%; padding: 18px 16px 26px; }
+#bluebird-panel .bb-social-heading { margin: 0 0 2px; color: var(--bb-ink); font-size: 21px; line-height: 1.35; }
+#bluebird-panel .bb-social-platforms { display: flex; gap: 8px; overflow-x: auto; min-height: 48px; padding: 2px 0 5px; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+#bluebird-panel .bb-social-platforms::-webkit-scrollbar { display: none; }
+#bluebird-panel .bb-social-platform { flex: 0 0 auto; min-height: 40px; padding: 8px 16px; border: 1px solid var(--bb-line); border-radius: 22px; background: var(--bb-surface); color: var(--bb-sub); font-size: 14px; touch-action: manipulation; }
+#bluebird-panel .bb-social-platform.is-active { background: var(--bb-accent); color: var(--bb-accent-ink); border-color: transparent; font-weight: 700; }
+#bluebird-panel .bb-social-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; }
+#bluebird-panel .bb-social-toolbar .bb-switch-hint { flex: 1; }
+#bluebird-panel .bb-social-toolbar button { flex: none; min-height: 42px; }
+#bluebird-panel .bb-social-post { border: 1px solid var(--bb-line); border-radius: 16px; background: var(--bb-surface); padding: 15px; overflow-wrap: anywhere; color: var(--bb-ink); }
+#bluebird-panel .bb-social-author { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#bluebird-panel .bb-social-author > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.4; }
+#bluebird-panel .bb-social-author strong { font-size: 14px; }
+#bluebird-panel .bb-social-author small { color: var(--bb-sub); font-size: 11px; }
+#bluebird-panel .bb-social-avatar { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--bb-accent-soft); color: var(--bb-accent-strong); font-weight: 700; }
+#bluebird-panel .bb-social-title { font-size: 16px; line-height: 1.45; margin: 14px 0 0; }
+#bluebird-panel .bb-social-text { margin: 13px 0 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+#bluebird-panel .bb-social-media { margin-top: 12px; padding: 12px; background: var(--bb-card); border-radius: 10px; color: var(--bb-sub); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+#bluebird-panel .bb-social-actions { display: flex; align-items: center; gap: 10px; margin-top: 13px; padding-top: 9px; border-top: 1px solid var(--bb-line); }
+#bluebird-panel .bb-social-actions button { min-height: 42px; padding: 6px 8px; color: var(--bb-accent-strong); font-size: 13px; touch-action: manipulation; }
+#bluebird-panel .bb-social-actions button:disabled { opacity: .5; }
+#bluebird-panel .bb-social-actions .bb-switch-hint { margin-left: auto; }
+#bluebird-panel .bb-social-comments { margin-top: 10px; border-top: 1px solid var(--bb-line); }
+#bluebird-panel .bb-social-comments p { margin: 10px 0 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+#bluebird-panel .bb-social-back { width: 44px; min-height: 44px; font-size: 30px; color: var(--bb-accent-strong); }
+#bluebird-panel .bb-social-compose { display: flex; align-items: flex-end; gap: 8px; }
+#bluebird-panel .bb-social-compose textarea { flex: 1; min-width: 0; min-height: 70px; resize: vertical; font-size: 16px; }
+#bluebird-panel .bb-social-compose button { flex: none; min-height: 44px; }
+#bluebird-panel .bb-social-settings { display: flex; flex-direction: column; gap: 10px; }
+#bluebird-panel .bb-social-settings .bb-switch { margin: 0; }
+#bluebird-panel .bb-social-estimate { margin: 5px 0 0; color: var(--bb-accent-strong); font-size: 13px; font-weight: 700; }
+#bluebird-panel .bb-social-friend-add { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#bluebird-panel .bb-social-friend-add input { flex: 1; min-width: 0; }
+#bluebird-panel .bb-social-friend-add button { flex: none; min-height: 44px; }

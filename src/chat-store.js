@@ -1,7 +1,7 @@
 // 当前聊天的状态与安全写回。楼层原文是消息的唯一来源。
-import { ctx, getSettings } from './settings.js?v=0.6.8';
-import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.6.8';
-import { selectedContacts } from './contacts.js?v=0.6.8';
+import { ctx, getSettings } from './settings.js?v=0.7.0';
+import { activeSwipe, activeSwipeKey, buildState, parseFloor, replaceTransferLine, storyContacts, escapeAttribute, serializeFields } from './messages.js?v=0.7.0';
+import { selectedContacts } from './contacts.js?v=0.7.0';
 import { saveChatDebounced as tavernSaveChatDebounced } from '../../../../../script.js';
 
 let state = buildState([]);

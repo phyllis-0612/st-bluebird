@@ -2,18 +2,19 @@
 // 手机端全屏面板。
 // 第四段：手机消息、主动输入和暂存状态。
 
-import { icons } from './icons.js?v=0.6.8';
-import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.6.8';
-import { createEntryModeControl } from './entry-controls.js?v=0.6.8';
-import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.6.8';
-import { scrollToFloor } from './chat-integration.js?v=0.6.8';
-import { fingerprint, detectChatTags } from './messages.js?v=0.6.8';
-import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.6.8';
-import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.6.8';
-import { getStoryContacts } from './proactive.js?v=0.6.8';
-import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.6.8';
-import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.6.8';
-import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.6.8';
+import { icons } from './icons.js?v=0.7.0';
+import { ctx, getSettings, setSetting, applyThemeEverywhere, VERSION, normalizeTagName, parseTagNames } from './settings.js?v=0.7.0';
+import { createEntryModeControl } from './entry-controls.js?v=0.7.0';
+import { getChatState, rebuildChatState, markConversationRead, processTransfer } from './chat-store.js?v=0.7.0';
+import { scrollToFloor } from './chat-integration.js?v=0.7.0';
+import { fingerprint, detectChatTags } from './messages.js?v=0.7.0';
+import { sendPhoneMessage, requestPhoneReply, getPhoneStatus } from './phone-chat.js?v=0.7.0';
+import { captureCurrentChat, currentChatMatches, isGenerationBusy } from './chat-store.js?v=0.7.0';
+import { getStoryContacts } from './proactive.js?v=0.7.0';
+import { selectedContacts, saveContacts, extractContacts } from './contacts.js?v=0.7.0';
+import { activeApiPreset, saveApiPresets, listApiModels } from './api.js?v=0.7.0';
+import { knownVoices, voiceSource, voiceAvailability, playVoice, stopVoice, playingVoiceId } from './voice.js?v=0.7.0';
+import { SOCIAL_PLATFORMS, socialState, socialFriends, setSocialFriend, socialTokenEstimate, refreshSocial, actOnSocialPost } from './social.js?v=0.7.0';
 
 let root = null;
 let page = 'list';
@@ -30,6 +31,7 @@ let sending = false;
 let candidates = null, extracting = false;
 let voicePickerFor = null;
 let presetModels = [];
+let socialPlatform = 'moments', socialPostKey = null, socialDraft = '', socialFriendDraft = '', socialBusy = false;
 function persistContactVoice(name, voiceId) {
     const provider = getSettings().voiceProvider;
     const contacts = selectedContacts().map(c => c.name === name ? { ...c, voice: { ...(c.voice || {}), [provider]: voiceId } } : c);
@@ -315,6 +317,130 @@ function renderConversation() {
     return wrap;
 }
 
+function renderSocial() {
+    const wrap = el('div', 'bb-social');
+    const settings = getSettings();
+    wrap.append(el('h3', 'bb-social-heading', '社区'));
+    if (!settings.socialEnabled) {
+        wrap.append(emptyState('社交页面已关闭', '在设置中开启需要的平台后，剧情里的公开动态会出现在这里。'));
+        const open = el('button', 'bb-reply-retry', '去设置'); open.type = 'button'; open.dataset.bbPage = 'settings'; wrap.append(open);
+        return wrap;
+    }
+    const enabled = Object.keys(SOCIAL_PLATFORMS).filter(key => settings.socialPlatforms[key]);
+    if (!enabled.length) {
+        wrap.append(emptyState('还没有启用平台', '在设置中选择朋友圈、微博、论坛或视频页。'));
+        const open = el('button', 'bb-reply-retry', '去设置'); open.type = 'button'; open.dataset.bbPage = 'settings'; wrap.append(open);
+        return wrap;
+    }
+    if (!enabled.includes(socialPlatform)) socialPlatform = enabled[0];
+    const state = socialState(ctx(), settings);
+    const posts = state.posts.filter(item => item.platform === socialPlatform);
+    const selected = socialPostKey && posts.find(item => item.key === socialPostKey);
+    if (socialPostKey && !selected) socialPostKey = null;
+    if (selected) {
+        const back = el('button', 'bb-back bb-social-back', '‹'); back.type = 'button'; back.dataset.bbAction = 'social-back'; back.setAttribute('aria-label', '返回社区');
+        wrap.append(back, socialPostCard(selected, true));
+        const composer = el('div', 'bb-social-compose');
+        const input = el('textarea', 'bb-settings-input'); input.rows = 2; input.maxLength = 280;
+        input.placeholder = '写一条评论…'; input.value = socialDraft; input.dataset.bbSocialDraft = '';
+        const send = el('button', 'bb-compose-send', socialBusy ? '处理中…' : '发表'); send.type = 'button';
+        send.dataset.bbSocialAction = 'comment'; send.dataset.bbSocialPost = selected.key; send.disabled = socialBusy || isGenerationBusy();
+        composer.append(input, send); wrap.append(composer);
+        return wrap;
+    }
+    const tabs = el('div', 'bb-social-platforms');
+    for (const key of enabled) {
+        const button = el('button', `bb-social-platform${key === socialPlatform ? ' is-active' : ''}`, SOCIAL_PLATFORMS[key]);
+        button.type = 'button'; button.dataset.bbSocialPlatform = key; button.setAttribute('aria-pressed', String(key === socialPlatform)); tabs.append(button);
+    }
+    wrap.append(tabs);
+    const intro = el('div', 'bb-social-toolbar');
+    intro.append(el('span', 'bb-switch-hint', socialPlatform === 'moments' ? '仅显示已加好友的动态与可见评论' : '公开内容 · 不限青鸟通讯录'));
+    const reload = el('button', 'bb-reply-retry', socialBusy ? '刷新中…' : '刷新'); reload.type = 'button';
+    reload.dataset.bbAction = 'social-refresh'; reload.disabled = socialBusy || isGenerationBusy() || socialPlatform === 'moments' && !state.friends.length;
+    intro.append(reload); wrap.append(intro);
+    if (socialPlatform === 'moments' && !state.friends.length) {
+        wrap.append(emptyState('还没有设置朋友圈好友', '通讯录不自动等于微信好友。在设置里勾选剧情中确实加了好友的人。'));
+    } else if (!posts.length) {
+        wrap.append(emptyState('目前没有动态', '剧情中确实有人发布，或你主动刷新时，才会出现相关内容。'));
+    } else {
+        for (const post of posts) wrap.append(socialPostCard(post, false));
+    }
+    return wrap;
+}
+
+function socialPostCard(post, detailed) {
+    const card = el('article', 'bb-social-post');
+    const head = el('div', 'bb-social-author');
+    head.append(el('span', 'bb-social-avatar', [...post.author][0] || '青'));
+    const who = el('div'); who.append(el('strong', null, post.author), el('small', null, `第 ${post.floorIndex + 1} 楼 · ${SOCIAL_PLATFORMS[post.platform]}`)); head.append(who);
+    card.append(head);
+    if (post.title) card.append(el('h4', 'bb-social-title', post.title));
+    if (post.text) card.append(el('p', 'bb-social-text', post.text));
+    if (post.media) card.append(el('div', 'bb-social-media', `▧  ${post.media}`));
+    const actions = el('div', 'bb-social-actions');
+    const like = el('button', null, post.liked ? '♥ 已赞' : '♡ 点赞'); like.type = 'button';
+    like.dataset.bbSocialAction = post.liked ? 'unlike' : 'like'; like.dataset.bbSocialPost = post.key;
+    like.disabled = socialBusy || isGenerationBusy(); actions.append(like);
+    if (!detailed) {
+        const open = el('button', null, `评论 ${post.comments.length}  ›`); open.type = 'button'; open.dataset.bbSocialOpen = post.key;
+        actions.append(open);
+    } else {
+        actions.append(el('span', 'bb-switch-hint', `赞 ${post.likes.length} · 评论 ${post.comments.length}`));
+    }
+    card.append(actions);
+    if (detailed && post.comments.length) {
+        const list = el('div', 'bb-social-comments');
+        for (const comment of post.comments) {
+            const row = el('p'); row.append(el('strong', null, `${comment.author}：`), el('span', null, comment.text)); list.append(row);
+        }
+        card.append(list);
+    }
+    if (detailed) {
+        const floor = el('button', 'bb-floor-divider', `第 ${post.floorIndex + 1} 楼 · 返回剧情 ↗`);
+        floor.type = 'button'; floor.dataset.bbSocialFloor = post.key; card.append(floor);
+    }
+    return card;
+}
+
+function renderSocialSettings(settings) {
+    const section = el('section', 'bb-entry-setting bb-social-settings');
+    section.append(el('span', 'bb-switch-title', '社交媒体页面'),
+        el('span', 'bb-switch-hint', '关闭时不生成新社交内容；旧内容保留。已有小爪机世界书规则需单独停用，避免正文重复生成。'));
+    const friends = socialFriends(ctx(), settings), tokens = socialTokenEstimate(settings, friends);
+    const toggleRow = (title, hint, checked, data) => {
+        const label = el('label', 'bb-switch'); const text = el('span', 'bb-switch-text');
+        text.append(el('span', 'bb-switch-title', title), el('span', 'bb-switch-hint', hint));
+        const input = el('input', 'bb-toggle'); input.type = 'checkbox'; input.checked = checked;
+        if (data === 'master') input.dataset.bbSetting = 'socialEnabled'; else input.dataset.bbSocialPlatformSetting = data;
+        label.append(text, input); return label;
+    };
+    section.append(toggleRow('启用社交页面', `有平台启用时共用规则约 +${tokens.sharedPotential} 输入 token/轮；默认关闭`, settings.socialEnabled, 'master'));
+    for (const [key, title] of Object.entries(SOCIAL_PLATFORMS)) {
+        section.append(toggleRow(title, `约 +${tokens.platforms[key]} 输入 token/轮；${key === 'moments' ? '需要先指定已加好友' : '公开平台'}`,
+            settings.socialPlatforms[key], key));
+    }
+    const total = el('p', 'bb-social-estimate', `当前勾选规则约 ${tokens.total} 输入 token/轮`);
+    section.append(total, el('span', 'bb-switch-hint', '这是固定规则的估算；剧情原文与已发生动态回带另计，后者有长度上限。不同模型的实际计数会有差异。'));
+    const people = selectedContacts(ctx(), settings);
+    const roster = el('div', 'bb-tag-scan');
+    roster.append(el('span', 'bb-switch-title', '朋友圈已加好友'),
+        el('span', 'bb-switch-hint', '只勾选剧情里确实和你互加好友的人。青鸟通讯录里有名字，不代表已加微信好友。'));
+    for (const name of [...new Set([...people.map(contact => contact.name), ...friends])]) {
+        const label = el('label', 'bb-tag-choice');
+        const box = el('input'); box.type = 'checkbox'; box.checked = friends.includes(name);
+        box.dataset.bbSocialFriend = name;
+        label.append(box, el('span', null, name)); roster.append(label);
+    }
+    const add = el('div', 'bb-social-friend-add');
+    const input = el('input', 'bb-settings-input'); input.placeholder = '其他已加好友的名字';
+    input.value = socialFriendDraft; input.dataset.bbSocialFriendDraft = '';
+    const button = el('button', 'bb-reply-retry', '添加好友'); button.type = 'button'; button.dataset.bbAction = 'social-add-friend';
+    add.append(input, button); roster.append(add);
+    section.append(roster);
+    return section;
+}
+
 function renderContacts() {
     const wrap = el('div', 'bb-settings');
     const provider = getSettings().voiceProvider;
@@ -546,13 +672,15 @@ function renderSettings() {
     const cacheInput = el('input', 'bb-settings-input'); cacheInput.type = 'number'; cacheInput.min = '10'; cacheInput.max = '1000'; cacheInput.step = '1';
     cacheInput.value = String(s.voiceCacheMB); cacheInput.dataset.bbSetting = 'voiceCacheMB'; cacheLimit.append(cacheInput); tts.append(cacheLimit);
     phoneSettings.append(tts);
-    wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking, phoneSettings, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
+    wrap.append(themeField, entryField, proactive, level, cooldown, depth, notice, voice, thinking,
+        renderSocialSettings(s), phoneSettings, el('p', 'bb-version', `青鸟 · Bluebird ${VERSION}`));
     return wrap;
 }
 
 const pages = {
     list: renderList,
     conversation: renderConversation,
+    social: renderSocial,
     contacts: renderContacts,
     settings: renderSettings,
 };
@@ -588,6 +716,45 @@ async function onClick(event) {
     if (!btn || !root.contains(btn)) return;
     if (btn.dataset.bbAction === 'close') {
         closePanel();
+        return;
+    }
+    if (btn.dataset.bbSocialPlatform) { socialPlatform = btn.dataset.bbSocialPlatform; socialPostKey = null; render(); return; }
+    if (btn.dataset.bbSocialOpen) { socialPostKey = btn.dataset.bbSocialOpen; socialDraft = ''; render(); return; }
+    if (btn.dataset.bbAction === 'social-back') { socialPostKey = null; socialDraft = ''; render(); return; }
+    if (btn.dataset.bbAction === 'social-add-friend') {
+        const name = socialFriendDraft.trim().slice(0, 80);
+        if (!name) { toastr.info('先填写已加好友的名字'); return; }
+        setSocialFriend(name, true); socialFriendDraft = ''; render(); return;
+    }
+    if (btn.dataset.bbAction === 'social-refresh') {
+        if (socialBusy) return;
+        const owner = captureCurrentChat(), platform = socialPlatform;
+        socialBusy = true; render();
+        try {
+            const count = await refreshSocial(platform);
+            if (currentChatMatches(owner)) toastr.info(count ? `新增 ${count} 条社交记录` : '当前没有新的合理动态');
+        } catch (error) { if (currentChatMatches(owner)) toastr.error(error.message || '刷新失败'); }
+        finally { socialBusy = false; if (isOpen && page === 'social' && currentChatMatches(owner)) render(); }
+        return;
+    }
+    if (btn.dataset.bbSocialAction) {
+        if (socialBusy) return;
+        const owner = captureCurrentChat();
+        const post = socialState(ctx(), getSettings()).posts.find(item => item.key === btn.dataset.bbSocialPost);
+        if (!post) { toastr.info('这条动态已改变，请重新打开'); render(); return; }
+        socialBusy = true; render();
+        try {
+            await actOnSocialPost(post, btn.dataset.bbSocialAction, socialDraft);
+            if (btn.dataset.bbSocialAction === 'comment') socialDraft = '';
+        } catch (error) { if (currentChatMatches(owner)) toastr.error(error.message || '互动保存失败'); }
+        finally { socialBusy = false; if (isOpen && page === 'social' && currentChatMatches(owner)) render(); }
+        return;
+    }
+    if (btn.dataset.bbSocialFloor) {
+        const post = socialState(ctx(), getSettings()).posts.find(item => item.key === btn.dataset.bbSocialFloor);
+        if (!post) { toastr.info('楼层已改变'); return; }
+        closePanel();
+        try { await scrollToFloor(post); } catch (error) { toastr.info(error.message); }
         return;
     }
     if (btn.dataset.bbAction === 'close-voice-picker') { voicePickerFor = null; render(); return; }
@@ -702,6 +869,8 @@ async function submitPhone(isText) {
 }
 
 function onInput(event) {
+    if (event.target.dataset?.bbSocialDraft !== undefined) { socialDraft = event.target.value; return; }
+    if (event.target.dataset?.bbSocialFriendDraft !== undefined) { socialFriendDraft = event.target.value; return; }
     if (event.target.dataset?.bbVoiceQuery !== undefined) {
         const query = event.target.value.trim().toLocaleLowerCase();
         const choices = root.querySelectorAll('[data-bb-voice-choice]');
@@ -716,6 +885,13 @@ function onInput(event) {
 function onChange(event) {
     const input = event.target;
     if (input.disabled) return;
+    if (input.dataset?.bbSocialPlatformSetting) {
+        const key = input.dataset.bbSocialPlatformSetting;
+        setSetting('socialPlatforms', { ...getSettings().socialPlatforms, [key]: input.checked }); render(); return;
+    }
+    if (input.dataset?.bbSocialFriend !== undefined) {
+        setSocialFriend(input.dataset.bbSocialFriend, input.checked); render(); return;
+    }
     if (input.dataset?.bbApiSelect !== undefined) {
         presetModels = []; setSetting('activeApiPresetId', input.value); render(); return;
     }
@@ -777,6 +953,8 @@ function onChange(event) {
         const tags = parseTagNames(input.value); setSetting('thinkTags', tags); input.value = tags.join(', ');
     } else if (key === 'proactiveEnabled') {
         setSetting(key, input.checked);
+    } else if (key === 'socialEnabled') {
+        setSetting(key, input.checked); render();
     } else if (key === 'proactiveLevel' && ['restrained', 'normal', 'clingy'].includes(input.value)) {
         setSetting(key, input.value);
     } else if (key === 'proactiveDepth' && ['0', '1'].includes(input.value)) {
@@ -831,6 +1009,7 @@ export function mountPanel() {
             <main class="bb-body"></main>
             <nav class="bb-tabs" aria-label="青鸟页面">
                 <button type="button" class="bb-tab" data-bb-page="list">${icons.chat()}<span>消息</span></button>
+                <button type="button" class="bb-tab" data-bb-page="social">${icons.social()}<span>社区</span></button>
                 <button type="button" class="bb-tab" data-bb-page="contacts">${icons.contacts()}<span>通讯录</span></button>
                 <button type="button" class="bb-tab" data-bb-page="settings">${icons.settings()}<span>设置</span></button>
             </nav>
@@ -883,7 +1062,7 @@ export function togglePanel() {
 /** 切换聊天后刷新剧情名等内容。 */
 export function refreshPanel(reason = 'update') {
     if (reason === 'chat' || reason === 'voice-mode') expandedVoiceIds.clear();
-    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; voicePickerFor = null; if (page === 'conversation') page = 'list'; }
+    if (reason === 'chat') { drafts.clear(); candidates = null; attachmentType = null; conversationId = null; voicePickerFor = null; socialPostKey = null; socialDraft = ''; socialFriendDraft = ''; if (page === 'conversation') page = 'list'; }
     if (!getSettings().enabled) { closePanel(); return; }
     if (isOpen && page !== 'settings' && reason !== 'read') {
         const body = root.querySelector('.bb-body'), top = body.scrollTop;

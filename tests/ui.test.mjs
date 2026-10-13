@@ -18,11 +18,11 @@ function panelHarness() {
     const close = document.createElement('button'); close.dataset.bbAction = 'close'; phone.append(close);
     const story = document.createElement('p'); story.className = 'bb-story'; phone.append(story);
     const body = document.createElement('main'); body.className = 'bb-body'; phone.append(body);
-    for (const page of ['list', 'contacts', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
+    for (const page of ['list', 'contacts', 'social', 'settings']) { const b = document.createElement('button'); b.className = 'bb-tab'; b.dataset.bbPage = page; phone.append(b); }
     let state = makeState(), readCalls = 0;
-    const sent = [], replies = [], status = { phase: 'idle' };
+    const sent = [], replies = [], status = { phase: 'idle' }, socialPosts = [], socialFriendsList = [];
     let contacts = [{ name: '剧情', source: { type: 'card' }, level: 'normal', voice: {} }, { name: '陆', source: { type: 'card' }, level: 'normal', voice: {} }];
-    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, voiceProvider: 'minimax', theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], apiPresets: [], activeApiPresetId: 'tavern', ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' }, ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' }, voiceCacheMB: 200, proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0 };
+    const settings = { enabled: true, inlineNotice: true, voiceEnabled: true, voiceProvider: 'minimax', theme: 'auto', entryMode: 'floating', thinkTags: ['think'], statusTags: ['status'], apiPresets: [], activeApiPresetId: 'tavern', ttsMiniMax: { baseUrl: 'https://api.minimaxi.com', apiKey: '', groupId: '', model: 'speech-2.8-hd' }, ttsElevenLabs: { baseUrl: 'https://api.elevenlabs.io', apiKey: '', model: 'eleven_v4' }, voiceCacheMB: 200, proactiveEnabled: true, proactiveLevel: 'normal', proactiveCooldown: 3, proactiveDepth: 0, socialEnabled: false, socialPlatforms: { moments: false, weibo: false, forum: false, video: false } };
     const scope = vm.createContext({ document, HTMLElement: Element, MutationObserver: class { observe() {} disconnect() {} },
         rootNode: root, icons, fingerprint, detectChatTags, normalizeTagName: value => String(value).replace(/[<>]/g, '').trim(),
         parseTagNames: value => [...new Set(String(value).split(/[,，\s]+/).map(t => t.replace(/[<>]/g, '').trim()).filter(Boolean))],
@@ -31,9 +31,12 @@ function panelHarness() {
         getChatState: () => state, rebuildChatState() {},
         markConversationRead(id) { const c = state.conversations.find(c => c.id === id); if (c?.unread) { readCalls++; state.unread -= c.unread; c.unread = 0; } },
         scrollToFloor() {}, processTransfer() {}, getPhoneStatus: () => status, isGenerationBusy: () => false,
-        captureCurrentChat: () => ({}), currentChatMatches: () => true, sendPhoneMessage: async (...args) => { sent.push(args); }, requestPhoneReply: name => { replies.push(name); }, toastr: { info() {}, error() {} } });
+        captureCurrentChat: () => ({}), currentChatMatches: () => true, sendPhoneMessage: async (...args) => { sent.push(args); }, requestPhoneReply: name => { replies.push(name); }, toastr: { info() {}, error() {} },
+        SOCIAL_PLATFORMS: { moments: '朋友圈', weibo: '微博', forum: '论坛', video: '视频' },
+        socialFriends: () => socialFriendsList, socialTokenEstimate: () => ({ shared: 0, sharedPotential: 280, platforms: { moments: 90, weibo: 70, forum: 60, video: 60 }, total: 0 }),
+        socialState: () => ({ posts: socialPosts, friends: socialFriendsList }), setSocialFriend(name, checked) { const index = socialFriendsList.indexOf(name); if (checked && index < 0) socialFriendsList.push(name); if (!checked && index >= 0) socialFriendsList.splice(index, 1); }, refreshSocial: async () => 0, actOnSocialPost: async () => [] });
     vm.runInContext(source('entry-controls') + '\n' + source('panel') + '\nroot = rootNode;', scope);
-    return { document, root, scope, settings, sent, replies, status, contacts: () => contacts, reads: () => readCalls, state: () => state,
+    return { document, root, scope, settings, sent, replies, status, socialPosts, socialFriendsList, contacts: () => contacts, reads: () => readCalls, state: () => state,
         setState(s) { state = s; }, click: async button => scope.onClick({ target: button }) };
 }
 
@@ -51,6 +54,41 @@ test('list and conversation show all five cards, outgoing bubble, enabled compos
     assert.equal(h.reads(), 1); assert.equal(h.state().unread, 0);
     await h.click(h.root.querySelector('[data-bb-action="back"]'));
     assert.equal(h.root.querySelector('.bb-unread-pill'), null);
+});
+
+test('community starts off, settings switch and per-platform input estimates are visible', async () => {
+    const h = panelHarness(); h.scope.openPanel();
+    await h.click(h.root.querySelector('[data-bb-page="social"]'));
+    assert.match(h.root.querySelector('.bb-empty-title').textContent, /已关闭/);
+    await h.click(h.root.querySelector('[data-bb-page="settings"]'));
+    assert.equal(h.root.querySelector('[data-bb-setting="socialEnabled"]').checked, false);
+    assert.match(h.root.querySelector('.bb-social-settings').textContent, /输入 token\/轮/);
+    const on = h.root.querySelector('[data-bb-setting="socialEnabled"]'); on.checked = true; h.scope.onChange({ target: on });
+    const weibo = h.root.querySelector('[data-bb-social-platform-setting="weibo"]');
+    weibo.checked = true; h.scope.onChange({ target: weibo });
+    assert.equal(h.settings.socialEnabled, true);
+    assert.equal(h.settings.socialPlatforms.weibo, true);
+    const input = h.root.querySelector('[data-bb-social-friend-draft]'); input.value = '阿颜';
+    h.scope.onInput({ target: input });
+    await h.click(h.root.querySelector('[data-bb-action="social-add-friend"]'));
+    assert.deepEqual(h.socialFriendsList, ['阿颜']);
+    assert.equal(h.root.querySelector('[data-bb-social-friend="阿颜"]').checked, true);
+});
+
+test('public community shows strangers as safe text, comments and story links; no demo card', async () => {
+    const h = panelHarness(); h.settings.socialEnabled = true; h.settings.socialPlatforms.weibo = true;
+    const floor = { mes: '公开动态' };
+    h.socialPosts.push({ key: 'weibo:w1', platform: 'weibo', id: 'w1', author: '陌生人', text: '<img src=x onerror=alert(1)>',
+        title: '#滨城下雪#', media: '街道画面', floorIndex: 2, floorRef: floor, comments: [
+            { author: '网友', text: '好美' }], likes: ['网友'], liked: false });
+    h.scope.openPanel(); await h.click(h.root.querySelector('[data-bb-page="social"]'));
+    assert.equal(h.root.querySelector('.bb-social-text').textContent, '<img src=x onerror=alert(1)>');
+    assert.equal(h.root.querySelector('.bb-social-text').innerHTML, '');
+    assert.equal(h.root.querySelector('[data-bb-social-platform="weibo"]').textContent, '微博');
+    assert.equal(h.root.querySelector('.bb-social').textContent.includes('剧情联动示意'), false);
+    await h.click(h.root.querySelector('[data-bb-social-open="weibo:w1"]'));
+    assert.match(h.root.querySelector('.bb-social-comments').textContent, /网友：好美/);
+    assert.equal(h.root.querySelector('[data-bb-social-floor]').textContent, '第 3 楼 · 返回剧情 ↗');
 });
 
 test('incoming text and sender names use textContent; no user text becomes HTML', () => {
@@ -101,10 +139,10 @@ function integrationHarness() {
 
 test('global regex installation is idempotent, preserves user scripts, and uses display/prompt flags', () => {
     const h = integrationHarness(); h.install(); h.install(); h.scope.syncRegexRules();
-    assert.equal(h.data.extensionSettings.regex.length, 4); assert.equal(h.hooks.length, 1);
+    assert.equal(h.data.extensionSettings.regex.length, 5); assert.equal(h.hooks.length, 1);
     assert.equal(h.data.extensionSettings.regex[0].findRegex, 'keep');
     const rules = h.data.extensionSettings.regex.slice(1);
-    assert.equal(rules.filter(r => r.markdownOnly).length, 2);
+    assert.equal(rules.filter(r => r.markdownOnly).length, 3);
     assert.equal(rules.filter(r => r.promptOnly).length, 1);
     const apply = (text, isPrompt) => rules.filter(r => isPrompt ? r.promptOnly : r.markdownOnly).reduce((s, r) => {
         const m = r.findRegex.match(/^\/(.*)\/([a-z]*)$/); return s.replace(new RegExp(m[1], m[2]), r.replaceString);

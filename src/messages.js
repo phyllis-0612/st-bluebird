@@ -208,5 +208,6 @@ export function replaceTransferLine(floor, message, status) {
 /** 只改变显示文本，不改变存档；未闭合的流式标签也不泄漏原始消息。 */
 export function hidePhoneTags(text) {
     return String(text).replace(/<bb-phone\b[^>]*>[\s\S]*?(?:<\/bb-phone\s*>|$)/gi, '')
-        .replace(/<bb-present\b[^>]*>[\s\S]*?(?:<\/bb-present\s*>|$)/gi, '');
+        .replace(/<bb-present\b[^>]*>[\s\S]*?(?:<\/bb-present\s*>|$)/gi, '')
+        .replace(/<bb-social\b[^>]*>[\s\S]*?(?:<\/bb-social\s*>|$)/gi, '');
 }

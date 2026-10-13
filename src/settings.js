@@ -1,7 +1,7 @@
 // 青鸟 · 设置读写与配色
 // 设置存在酒馆的 extensionSettings.bluebird 里，跟着酒馆设置一起保存。
 
-export const VERSION = '0.6.8';
+export const VERSION = '0.7.0';
 
 const KEY = 'bluebird';
 const settingListeners = new Set();
@@ -32,6 +32,9 @@ const DEFAULTS = Object.freeze({
     proactiveLevel: 'normal',
     proactiveCooldown: 3, // 两次主线来信之间隔开的楼层，用户楼层也计入
     proactiveDepth: 0,
+    socialEnabled: false, // 社交规则总开关，旧聊天升级后保持关闭
+    socialPlatforms: { moments: false, weibo: false, forum: false, video: false },
+    socialFriends: {}, // 每张角色卡/群聊单独保存已加的朋友圈好友
     phoneModel: '', // 留空跟随酒馆模型；可填写当前连接支持的 Flash 模型 ID
     apiPresets: [], // 青鸟独立 OpenAI 兼容预设；空表示跟随酒馆
     activeApiPresetId: 'tavern',
@@ -71,6 +74,10 @@ export function getSettings() {
     if (!['restrained', 'normal', 'clingy'].includes(s.proactiveLevel)) s.proactiveLevel = DEFAULTS.proactiveLevel;
     if (!Number.isSafeInteger(s.proactiveCooldown) || s.proactiveCooldown < 0) s.proactiveCooldown = DEFAULTS.proactiveCooldown;
     if (![0, 1].includes(s.proactiveDepth)) s.proactiveDepth = DEFAULTS.proactiveDepth;
+    if (typeof s.socialEnabled !== 'boolean') s.socialEnabled = false;
+    if (!s.socialPlatforms || typeof s.socialPlatforms !== 'object' || Array.isArray(s.socialPlatforms)) s.socialPlatforms = {};
+    for (const platform of Object.keys(DEFAULTS.socialPlatforms)) if (typeof s.socialPlatforms[platform] !== 'boolean') s.socialPlatforms[platform] = false;
+    if (!s.socialFriends || typeof s.socialFriends !== 'object' || Array.isArray(s.socialFriends)) s.socialFriends = {};
     if (typeof s.phoneModel !== 'string') s.phoneModel = '';
     s.phoneModel = s.phoneModel.trim();
     if (!Array.isArray(s.apiPresets)) s.apiPresets = [];

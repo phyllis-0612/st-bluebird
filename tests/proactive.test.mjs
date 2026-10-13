@@ -8,16 +8,18 @@ const phone = '<bb-phone>陆|text|到家了吗</bb-phone>';
 const floor = mes => ({ mes, is_user: false });
 function harness() {
     const events = new Map(), calls = [];
+    let socialText = '';
     const c = { chat: [], chatMetadata: {}, characterId: 0, groupId: null, chatId: 'first', name1: '鱼仔',
         characters: [{ avatar: 'lu.png', name: '陆' }, { avatar: 'he.png', name: '何' }], groups: [], extensionSettings: {}, saveSettingsDebounced() {},
         eventTypes: Object.fromEntries(['GENERATION_STARTED', 'GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_CHANGED'].map(n => [n, n])),
         eventSource: { on(n, fn) { events.set(n, fn); } }, setExtensionPrompt(...args) { calls.push(args); } };
     const scope = vm.createContext({ world_info: {}, SillyTavern: { getContext: () => c }, window: { matchMedia: () => ({ matches: false }) },
         document: { querySelectorAll: () => [] }, parseFloor, serializeFields, storyContacts, cachedFloor: parseFloor, preparePendingGeneration() {},
-        captureCurrentChat: () => ({ chat: c.chat, id: c.chatId }), currentChatMatches: o => o.chat === c.chat && o.id === c.chatId });
+        captureCurrentChat: () => ({ chat: c.chat, id: c.chatId }), currentChatMatches: o => o.chat === c.chat && o.id === c.chatId,
+        buildSocialPrompt: () => socialText });
     vm.runInContext(source('settings') + '\n' + source('contacts') + '\n' + source('proactive'), scope);
     const settings = scope.getSettings();
-    return { c, scope, settings, calls, events, prompt: type => scope.buildProactivePrompt(c, settings, type),
+    return { c, scope, settings, calls, events, setSocialPrompt(text) { socialText = text; }, prompt: type => scope.buildProactivePrompt(c, settings, type),
         prepare(type) { scope.prepareProactiveGeneration([], 8000, () => { throw Error('must not abort'); }, type); return calls.at(-1); } };
 }
 test('old settings migrate and malformed values reset; zero cooldown persists', () => {
@@ -26,6 +28,14 @@ test('old settings migrate and malformed values reset; zero cooldown persists', 
     h.scope.getSettings(); assert.equal(h.settings.proactiveEnabled, true); assert.equal(h.settings.proactiveCooldown, 3);
     assert.equal(h.settings.proactiveLevel, 'normal'); assert.equal(h.settings.proactiveDepth, 0);
     h.settings.proactiveCooldown = 0; h.scope.getSettings(); assert.equal(h.settings.proactiveCooldown, 0);
+});
+
+test('enabled community rules join the normal story prompt but not a continuation', () => {
+    const h = harness(); h.setSocialPrompt('[青鸟·社交媒体]');
+    assert.match(h.prompt('normal'), /\[青鸟·社交媒体\]/);
+    assert.doesNotMatch(h.prompt('continue'), /\[青鸟·社交媒体\]/);
+    h.setSocialPrompt('');
+    assert.doesNotMatch(h.prompt('normal'), /\[青鸟·社交媒体\]/);
 });
 test('character zero is valid; groups use avatars and exclude disabled or missing cards', () => {
     const h = harness(); assert.deepEqual(Array.from(h.scope.getStoryContacts()), ['陆']);
